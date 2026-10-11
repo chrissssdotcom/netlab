@@ -14,3 +14,7 @@ ebgp_peers: []
 
 # Road warrior IPv4 pool (gateway = first address, clients = pool base + id)
 rw_pool4: 172.22.169.56/29
+
+# Provider VPC behind this router: created and attached when the server is first created
+# (see docs/HOSTING.md, "Provider VPC behind a router")
+vpc_enabled: true

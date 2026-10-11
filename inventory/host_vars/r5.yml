@@ -14,3 +14,7 @@ ebgp_peers: []
 
 # Road warrior is IPv6-only here until this PoP gets an IPv4 pool, e.g.
 # rw_pool4: 172.22.169.xx/29
+
+# Provider VPC behind this router: created and attached when the server is first created
+# (see docs/HOSTING.md, "Provider VPC behind a router")
+vpc_enabled: true
