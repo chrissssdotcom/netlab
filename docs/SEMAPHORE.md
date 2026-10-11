@@ -18,6 +18,26 @@ git add pubkeys/*.pub && git commit -m "Cache router public keys" && git push
 After that, `--limit` runs from Semaphore work. (A full unlimited run always works,
 even without the cache.)
 
+## Automated setup (steps 2-6 below in one command)
+
+`tools/semaphore_setup.py` creates or updates the project, keys, repository,
+environment, inventory and all five task templates through Semaphore's API. It is
+idempotent, uses only the Python standard library and never prints a secret.
+
+```bash
+export SEMAPHORE_URL=https://semaphore.example.net
+export SEMAPHORE_TOKEN=...                      # API token; revoke it when done
+export DN42_ROUTERS_SSH_KEY_FILE=~/.ssh/dn42_routers      # private key with root on the PoPs
+export DN42_GIT_KEY_FILE=~/.ssh/dn42_deploy               # read-only GitHub deploy key (SSH URLs)
+export VULTR_API_KEY=... LINODE_TOKEN=...                 # optional; stored as secret env vars
+export DN42_ADMIN_SSH_PUBKEY_FILE=~/.ssh/dn42_routers.pub # optional; public key for new servers
+python tools/semaphore_setup.py --dry-run       # reads only, shows what it would write
+python tools/semaphore_setup.py
+```
+
+Anything left unset is skipped, never blanked, so it can be re-run as you add more.
+`tests/semaphore-setup-test.sh` exercises it against a local mock of the API.
+
 ## 1. Push the repo somewhere Semaphore can clone
 
 Any Git host works. Nothing secret is in the repo: private keys are generated on
@@ -75,11 +95,11 @@ up, a laptop can do this from anywhere.
 
 | Template | Playbook | Notes |
 |---|---|---|
-| `dn42 — deploy all` | `site.yml` | the normal one; idempotent, safe to re-run |
-| `dn42 — deploy one PoP` | `site.yml` | enable *Allow CLI args in task* (or use the template's *Limit* field if your version has one) and pass `--limit r3`; roll out risky changes one PoP at a time |
-| `dn42 — create servers + deploy` | `deploy.yml` | creates any missing VPS, then builds everything; needs the secret variables from section 4 |
-| `dn42 — servers dry run` | `provision.yml` | add `--check` as the template's CLI args: lists what would be created and creates nothing |
-| `dn42 — road warrior configs` | `rw-clients.yml` | prints the client config for every device and PoP in the task log; add `-e only=laptop` for one device |
+| `dn42 - deploy all` | `site.yml` | the normal one; idempotent, safe to re-run |
+| `dn42 - deploy one PoP` | `site.yml` | enable *Allow CLI args in task* (or use the template's *Limit* field if your version has one) and pass `--limit r3`; roll out risky changes one PoP at a time |
+| `dn42 - create servers + deploy` | `deploy.yml` | creates any missing VPS, then builds everything; needs the secret variables from section 4 |
+| `dn42 - servers dry run` | `provision.yml` | add `--check` as the template's CLI args: lists what would be created and creates nothing |
+| `dn42 - road warrior configs` | `rw-clients.yml` | prints the client config for every device and PoP in the task log; add `-e only=laptop` for one device |
 
 Leave out `--check`: the first-run tasks generate keys and read them back, so a dry
 run cannot get far on a fresh router.
