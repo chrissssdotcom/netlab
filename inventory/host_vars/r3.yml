@@ -12,13 +12,13 @@ community_country: 1840        # United States
 
 ebgp_peers: []
 
-# Road warrior IPv4 pool (gateway = first address, clients = pool base + id)
-rw_pool4: 172.22.169.56/29
 
 # Provider VPC behind this router: created and attached when the server is first created
 # (see docs/HOSTING.md, "Provider VPC behind a router")
 vpc_enabled: true
 vpc_type: vlan             # Linode VLAN: plain Layer 2, IPv6 works, nothing filtered
-# dn42 IPv4 subnet behind this router (a /29 allocated in your IPAM, inside dn42_aggregates4).
-# The router takes the first address; hosts behind it use the rest. Empty = IPv6 only.
-vpc_dn42_net4: ""
+
+# IPv4: this PoP's /29 (one per PoP, from dn42_aggregates4). Layout: +1 router/gateway,
+# +2 loopback, +3 road-warrior /32, +4..+6 hosts behind the router. The same /29 is the
+# provider VPC/VLAN subnet when vpc_enabled is true. Allocated in IPAM.
+pop_block4: 172.22.169.48/29

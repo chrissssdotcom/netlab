@@ -47,23 +47,35 @@ for c in build/*/clients/*.conf; do
   WG_QUICK_USERSPACE_IMPLEMENTATION=true wg-quick strip "$tmp/rwc/$h-$n.conf" >/dev/null || { echo "RW CLIENT FAIL $h/$n"; fail=1; }
 done
 want() { grep -qE "$2" "$1" || { echo "RW CHECK FAIL: $1 lacks /$2/"; fail=1; }; }
-want build/r2/wireguard/rw0.conf '^Address = fdcd:f79a:c76b:2f00::1/64, 172\.22\.169\.49/29$'
-want build/r2/wireguard/rw0.conf '^AllowedIPs = 172\.22\.169\.50/32, fdcd:f79a:c76b:2f00::2/128$'   # laptop
-want build/r2/wireguard/rw0.conf '^AllowedIPs = 172\.22\.169\.54/32, fdcd:f79a:c76b:2f00::6/128$'   # phone
-want build/r4/wireguard/rw0.conf '^Address = fdcd:f79a:c76b:4f00::1/64$'                              # no v4 pool
-want build/r4/wireguard/rw0.conf '^AllowedIPs = fdcd:f79a:c76b:4f00::6/128$'
-want build/r2/clients/laptop.conf '^Address = 172\.22\.169\.50/32, fdcd:f79a:c76b:2f00::2/128$'
+# --- IPv4 plan: one /29 per PoP; +1 router, +2 loopback, +3 road-warrior /32 ---------------
+want build/r1/bird.conf '^define OWNIP += 172\.22\.169\.34;'
+want build/r2/bird.conf '^define OWNIP += 172\.22\.169\.42;'
+want build/r3/bird.conf '^define OWNIP += 172\.22\.169\.50;'
+want build/r4/bird.conf '^define OWNIP += 172\.22\.169\.58;'
+want build/r5/bird.conf '^define OWNIP += 172\.22\.101\.194;'
+want build/r2/dn42-loopback.service 'ip address replace 172\.22\.169\.42/32 dev dn42'
+[ "$(grep -c 'route 172\.22\.169\.40/29 unreachable' build/r2/bird.conf)" = 1 ] || { echo "r2 block not originated exactly once"; fail=1; }
+want build/r5/bird.conf '^	route 172\.22\.101\.192/29 unreachable;'
+# --- road warriors: IPv6 for everyone, the one IPv4 /32 for the device that asks -----------
+want build/r2/wireguard/rw0.conf '^Address = fdcd:f79a:c76b:2f00::1/64$'
+want build/r2/wireguard/rw0.conf '^PostUp = ip -4 route replace 172\.22\.169\.43/32 dev %i$'
+want build/r2/wireguard/rw0.conf '^AllowedIPs = 172\.22\.169\.43/32, fdcd:f79a:c76b:2f00::2/128$'   # laptop
+want build/r2/wireguard/rw0.conf '^AllowedIPs = fdcd:f79a:c76b:2f00::6/128$'                          # phone: IPv6 only
+want build/r4/wireguard/rw0.conf '^PostUp = ip -4 route replace 172\.22\.169\.59/32 dev %i$'
+want build/r5/wireguard/rw0.conf '^AllowedIPs = 172\.22\.101\.195/32, fdcd:f79a:c76b:5f00::2/128$'
+want build/r2/clients/laptop.conf '^Address = 172\.22\.169\.43/32, fdcd:f79a:c76b:2f00::2/128$'
+want build/r2/clients/phone.conf '^Address = fdcd:f79a:c76b:2f00::6/128$'
+[ "$(grep -c 'ip -4 route' build/r3/wireguard/rw0.conf)" = 1 ] || { echo "r3: expected one IPv4 route (laptop only)"; fail=1; }
 want build/r2/dn42.nft '"rw0" oifname "wg-r\*" accept'
-want build/r2/bird.conf '^	route 172\.22\.169\.48/29 unreachable;'
+# --- VPC/VLAN: our /29 as the subnet, router at +1, forwarding only from our own space -----
 want build/r2/dn42.nft 'iifname "ens7" oifname "wg-r\*" ip saddr \{ 172\.22\.169\.32/27, 172\.22\.101\.192/29 \} accept'
 want build/r2/dn42.nft 'iifname "ens7" oifname "dn42\*" ip6 saddr \{ fdcd:f79a:c76b::/48 \} accept'
-# our own dn42 addressing on the VPC NIC: static, so no DHCP rule and no DHCP client
 ! grep -q 'udp sport 67' build/r2/dn42.nft || { echo "static VPC ruleset allows DHCP"; fail=1; }
 want build/r2/dn42-vpc.nmconnection '^method=manual$'
 want build/r2/dn42-vpc.nmconnection '^address1=fdcd:f79a:c76b:2001::1/64$'
-want build/r2/dn42-vpc.nmconnection '^address1=172\.22\.169\.61/30$'
+want build/r2/dn42-vpc.nmconnection '^address1=172\.22\.169\.41/29$'
+want build/r5/dn42-vpc.nmconnection '^address1=172\.22\.101\.193/29$'
 want build/r2/dn42-vpc.nmconnection '^never-default=true$'
-want build/r2/bird.conf '^	route 172\.22\.169\.60/30 unreachable;'
 ! grep -q 'rw0' build/r1/wireguard/wg-r2.conf || { echo "RW leaked into a mesh tunnel"; fail=1; }
 [ ! -e build/r1/clients/tablet.conf ] || { echo "client pinned to r3 rendered on r1"; fail=1; }
 echo "road warrior checks done"
@@ -71,7 +83,7 @@ echo "road warrior checks done"
 # VLAN mode (Linode): static addressing, IPv6 always, no DHCP anywhere
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook tests/render.yml -e pubkey_dir="$tmp/pubkeys" -e bird_roa_dir="$tmp/roa"   -e @tests/sample-peer.yml -e vpc_type=vlan >/dev/null
 want build/r2/dn42-vpc.nmconnection '^method=manual$'
-want build/r2/dn42-vpc.nmconnection '^address1=172\.22\.169\.61/30$'
+want build/r2/dn42-vpc.nmconnection '^address1=172\.22\.169\.41/29$'
 want build/r2/dn42-vpc.nmconnection '^address1=fdcd:f79a:c76b:2001::1/64$'
 ! grep -q 'method=auto' build/r2/dn42-vpc.nmconnection || { echo "VLAN profile uses DHCP"; fail=1; }
 ! grep -q 'udp sport 67' build/r2/dn42.nft || { echo "VLAN ruleset allows DHCP"; fail=1; }

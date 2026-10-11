@@ -16,5 +16,7 @@ ebgp_export_prepend: 2
 
 ebgp_peers: []
 
-# Road warrior IPv4 pool (gateway = first address, clients = pool base + id)
-rw_pool4: 172.22.169.40/29
+# IPv4: this PoP's /29 (one per PoP, from dn42_aggregates4). Layout: +1 router/gateway,
+# +2 loopback, +3 road-warrior /32, +4..+6 hosts behind the router. The same /29 is the
+# provider VPC/VLAN subnet when vpc_enabled is true. Allocated in IPAM.
+pop_block4: 172.22.169.32/29

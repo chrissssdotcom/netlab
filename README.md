@@ -3,13 +3,20 @@
 Five PoPs, one ASN, full WireGuard mesh. Rocky Linux 9 + BIRD 2 (EPEL) + nftables,
 built and kept in shape by one Ansible playbook.
 
-| PoP | Where | Provider (region id) | Loopbacks | Block |
-|---|---|---|---|---|
-| r1 | Adelaide, AU | Home | 172.22.169.33, fdcd:f79a:c76b::1 | fdcd:f79a:c76b:1000::/52 |
-| r2 | Frankfurt, DE | Vultr (`fra`) | 172.22.169.34, ::2 | :2000::/52 |
-| r3 | Los Angeles, US | Linode (`us-lax`) | 172.22.169.35, ::3 | :3000::/52 |
-| r4 | Tokyo, JP | Vultr (`nrt`) | 172.22.169.36, ::4 | :4000::/52 |
-| r5 | Sydney, AU | Linode (`ap-southeast`) | 172.22.169.37, ::5 | :5000::/52 |
+| PoP | Where | Provider (region id) | IPv4 /29 | Loopbacks | IPv6 block |
+|---|---|---|---|---|---|
+| r1 | Adelaide, AU | Home | 172.22.169.32/29 | 172.22.169.34, fdcd:f79a:c76b::1 | fdcd:f79a:c76b:1000::/52 |
+| r2 | Frankfurt, DE | Vultr (`fra`) | 172.22.169.40/29 | 172.22.169.42, ::2 | :2000::/52 |
+| r3 | Los Angeles, US | Linode (`us-lax`) | 172.22.169.48/29 | 172.22.169.50, ::3 | :3000::/52 |
+| r4 | Tokyo, JP | Vultr (`nrt`) | 172.22.169.56/29 | 172.22.169.58, ::4 | :4000::/52 |
+| r5 | Sydney, AU | Linode (`ap-southeast`) | 172.22.101.192/29 | 172.22.101.194, ::5 | :5000::/52 |
+
+**IPv4 plan:** each PoP owns one `/29` (`pop_block4` in `host_vars`), laid out the same
+way everywhere: `+0` network, **`+1` router** (gateway for hosts behind it), **`+2`
+loopback**, **`+3` the one road-warrior `/32`**, `+4..+6` hosts behind the router, `+7`
+broadcast. The same `/29` is the provider VPC/VLAN subnet. Loopbacks, the road-warrior
+address and the router are derived from it, and a preflight rejects a block that is
+misaligned, outside `dn42_aggregates4` or shared between PoPs.
 
 Everything per-PoP is derived from `router_id` (1–15): loopbacks, `/52`, link-local
 addresses and WireGuard ports.
@@ -123,13 +130,14 @@ routers, and the firewall never forwards between dn42 and the Internet.
 
 | | IPv6 | IPv4 |
 |---|---|---|
-| Pool at each PoP | `fdcd:f79a:c76b:<N>f00::/64`, carved from that PoP's `/52` | a `/29` from your `/27` (`rw_pool4` in `host_vars`) |
-| Gateway | `::1` | pool base + 1 |
-| Client with `id: 5` | `...::5/128` | pool base + 5 `/32` |
+| At each PoP | a `/64`: `fdcd:f79a:c76b:<N>f00::/64`, from that PoP's `/52` | one `/32`: the PoP's `/29` `+3` (`rw_addr4`) |
+| Gateway | `::1` | none needed: it is routed straight to the tunnel |
+| Client with `id: 5` | `...::5/128` | the `/32` goes to the one device with `ipv4: true` |
 
-r4 and r5 are IPv6-only until you give them an `rw_pool4`. The `/52` is already in
-iBGP and the pool `/29` is added to it automatically, so the rest of dn42 and your
-other PoPs can reach a connected device with no extra routing.
+Every device gets IPv6. Because a PoP has a single IPv4 `/32`, **at most one device per
+PoP** sets `ipv4: true` (a preflight enforces it; use `pops:` if two devices want IPv4 at
+different PoPs). The PoP's `/29` is already announced, so the rest of dn42 and your other
+PoPs reach a connected device with no extra routing.
 
 **Add a device**
 
@@ -139,7 +147,8 @@ other PoPs can reach a connected device with no extra routing.
    ```yaml
    rw_clients:
      - name: laptop
-       id: 2                  # unique; 2-6 while a PoP only has a /29
+       id: 2                  # unique; the IPv6 host number
+       ipv4: true             # optional: this device gets the PoP's IPv4 /32
        wg_pubkey: "<public key from the device>"
        pops: [r1, r2, r3]     # optional; default is every PoP
    ```

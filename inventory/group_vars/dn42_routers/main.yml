@@ -7,10 +7,16 @@ dn42_prefix6: "fdcd:f79a:c76b"                  # the /48, without the trailing 
 dn42_aggregates6: ["fdcd:f79a:c76b::/48"]       # announced to eBGP from every PoP
 dn42_aggregates4: ["172.22.169.32/27", "172.22.101.192/29"]
 dn42_loopback_net6: "fdcd:f79a:c76b::/64"       # router /128 loopbacks live here
-dn42_anycast4: "172.22.101.192/29"              # anycast services, bound at every PoP
+
+# --- IPv4 plan: one /29 per PoP, taken from dn42_aggregates4 (set pop_block4 in host_vars).
+# Inside each /29:  +0 network   +1 router (gateway for the hosts behind it)   +2 loopback
+#                   +3 road-warrior /32   +4..+6 hosts behind the router   +7 broadcast
+pop_block4: ""             # e.g. 172.22.169.40/29 — required, one per PoP, never shared
+pop_block4_base: "{{ pop_block4.split('/')[0].split('.')[0:3] | join('.') }}"
+pop_block4_off: "{{ pop_block4.split('/')[0].split('.')[3] | int }}"
 
 # --- Derived per router from router_id (1-15). Override in host_vars only if needed.
-loopback4: "172.22.169.{{ 32 + (router_id | int) }}"
+loopback4: "{{ pop_block4_base }}.{{ (pop_block4_off | int) + 2 }}"
 loopback6: "{{ dn42_prefix6 }}::{{ '%x' | format(router_id | int) }}"
 pop_prefix6: "{{ dn42_prefix6 }}:{{ '%x' | format(router_id | int) }}000::/52"
 pop_prefixes4: []          # extra IPv4 service routes this PoP originates internally (e.g. 172.22.169.48/32)
@@ -41,12 +47,7 @@ rw_endpoint: "{{ wg_endpoint if wg_endpoint else public_ipv4 }}"   # what client
 rw_prefix6: "{{ dn42_prefix6 }}:{{ '%x' | format(router_id | int) }}f00"   # PoP /52 -> its f00 /64
 rw_net6: "{{ rw_prefix6 }}::/64"
 rw_gw6: "{{ rw_prefix6 }}::1"
-rw_pool4: ""                # per PoP in host_vars, e.g. 172.22.169.48/29 ('' = IPv6-only here)
-rw_pool4_base: "{{ rw_pool4.split('/')[0].split('.')[0:3] | join('.') }}"
-rw_pool4_off: "{{ rw_pool4.split('/')[0].split('.')[3] | int }}"
-rw_pool4_len: "{{ rw_pool4.split('/')[1] | int }}"
-rw_pool4_size: "{{ 2 ** (32 - (rw_pool4.split('/')[1] | int)) }}"
-rw_gw4: "{{ rw_pool4_base }}.{{ (rw_pool4_off | int) + 1 }}"
+rw_addr4: "{{ pop_block4_base }}.{{ (pop_block4_off | int) + 3 }}"   # the one road-warrior IPv4 /32 at this PoP
 # What a client routes into the tunnel (split tunnel: dn42 and friends only).
 # Deliberately not all of 10.0.0.0/8, which most home and office LANs use.
 rw_client_allowed_ips:
@@ -56,14 +57,16 @@ rw_client_allowed_ips:
   - 10.127.0.0/16
   - fd00::/8
 rw_dns: []                  # e.g. ["fd42:d42:d42:54::1"] — dn42 resolvers handed to clients
-# One entry per device. `id` is the host offset in every PoP's pool (v4: pool base + id,
-# v6: <rw /64>::<id hex>), so a device keeps its numbers wherever it connects.
+# One entry per device. IPv6: every device gets <rw /64>::<id hex> at every PoP. IPv4: each PoP has
+# a single road-warrior /32 (rw_addr4), so at most ONE device per PoP may set `ipv4: true`.
 # rw_clients:
 #   - name: laptop            # a-z0-9-, max 20 chars
-#     id: 2                   # 2..(pool size - 2) for v4 pools; 2..254 for v6
+#     id: 2                   # 2..254, unique; the IPv6 host number
 #     wg_pubkey: "base64-public-key-generated-on-the-device="
+#     ipv4: true              # optional: this device gets the PoP's IPv4 /32 (default: IPv6 only)
 #     pops: [r1, r2]          # optional: only these PoPs accept it (default: all)
 rw_clients: []
+rw_ipv4_clients: "{{ rw_clients_here | selectattr('ipv4', 'defined') | selectattr('ipv4') | list }}"
 rw_clients_here: >-
   {{ (rw_clients | rejectattr('pops', 'defined') | list)
      + (rw_clients | selectattr('pops', 'defined') | selectattr('pops', 'contains', inventory_hostname) | list) }}
@@ -99,7 +102,7 @@ vpc_static: "{{ vpc_type == 'vlan' or (vpc_dn42_net4 | length > 0) }}"   # we as
 vpc_interface: ""           # the VPC NIC; empty = the one interface that is not public/tunnel
 vpc_iface: "{{ vpc_interface }}"   # resolved at run time by the vpc role
 vpc_dn42_net6: "{{ dn42_prefix6 }}:{{ '%x' | format(router_id | int) }}001::/64"   # inside the PoP /52; router = ::1
-vpc_dn42_net4: ""           # optional dn42 IPv4 subnet for the VPC, e.g. 172.22.169.40/29 (router = first address)
+vpc_dn42_net4: "{{ pop_block4 }}"   # the dn42 IPv4 subnet behind the router; default is the PoP's /29 ('' = IPv6 only)
 vpc_gw4: "{{ vpc_dn42_net4.split('/')[0].split('.')[0:3] | join('.') }}.{{ (vpc_dn42_net4.split('/')[0].split('.')[3] | int) + 1 }}"
 
 # --- BGP policy -----------------------------------------------------------------

@@ -2,16 +2,19 @@
 # Road warrior tunnel on {{ inventory_hostname }} ({{ location }}) — roaming clients dial in here
 [Interface]
 ListenPort = {{ rw_listen_port }}
-Address = {{ rw_gw6 }}/64{% if rw_pool4 %}, {{ rw_gw4 }}/{{ rw_pool4_len }}{% endif %}
-
+Address = {{ rw_gw6 }}/64
 MTU = {{ wg_mtu }}
 Table = off
 PostUp = wg set %i private-key /etc/wireguard/node.key
+{% if rw_ipv4_clients %}
+# The PoP's single IPv4 /32 for road warriors: routed to the tunnel, no gateway address needed
+PostUp = ip -4 route replace {{ rw_addr4 }}/32 dev %i
+{% endif %}
 {% for rw_client in rw_clients_here %}
 
 # {{ rw_client.name }}
 [Peer]
 PublicKey = {{ rw_client.wg_pubkey }}
 # Pinned to the client's own addresses: it cannot source traffic from anywhere else
-AllowedIPs = {% if rw_pool4 %}{{ rw_pool4_base }}.{{ (rw_pool4_off | int) + (rw_client.id | int) }}/32, {% endif %}{{ rw_prefix6 }}::{{ '%x' | format(rw_client.id | int) }}/128
+AllowedIPs = {% if rw_client.ipv4 | default(false) %}{{ rw_addr4 }}/32, {% endif %}{{ rw_prefix6 }}::{{ '%x' | format(rw_client.id | int) }}/128
 {% endfor %}

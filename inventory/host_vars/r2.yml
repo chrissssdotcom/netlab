@@ -24,12 +24,12 @@ ebgp_peers: []
 #    crypto: 34                 # 64511:34   WireGuard
 #    bfd: false                 # only if the peer runs BFD too
 
-# Road warrior IPv4 pool (gateway = first address, clients = pool base + id)
-rw_pool4: 172.22.169.48/29
 
 # Provider VPC behind this router: created and attached when the server is first created
 # (see docs/HOSTING.md, "Provider VPC behind a router")
 vpc_enabled: true
-# dn42 IPv4 subnet behind this router (a /29 allocated in your IPAM, inside dn42_aggregates4).
-# The router takes the first address; hosts behind it use the rest. Empty = IPv6 only.
-vpc_dn42_net4: ""
+
+# IPv4: this PoP's /29 (one per PoP, from dn42_aggregates4). Layout: +1 router/gateway,
+# +2 loopback, +3 road-warrior /32, +4..+6 hosts behind the router. The same /29 is the
+# provider VPC/VLAN subnet when vpc_enabled is true. Allocated in IPAM.
+pop_block4: 172.22.169.40/29

@@ -93,7 +93,12 @@ ok "custom prefix used as the provider subnet (Vultr + Linode)" "$(stat subnets)
 kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
 python3 tests/mock_provider_api.py $port & mock=$!
 for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
+ansible-playbook provision.yml --limit r2,r3 -e vpc_enabled=true -e vpc_type=vpc -e vpc_dn42_net4= "${args[@]}" >/dev/null
+ok "dn42 subnet emptied: private placeholder subnets" "$(stat subnets)" "['10.202.0.0/24', '10.203.0.0/24']"
+kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
+python3 tests/mock_provider_api.py $port & mock=$!
+for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
 ansible-playbook provision.yml --limit r2,r3 -e vpc_enabled=true -e vpc_type=vpc "${args[@]}" >/dev/null
-ok "no custom prefix: private placeholder subnets" "$(stat subnets)" "['10.202.0.0/24', '10.203.0.0/24']"
+ok "default: each PoP's own /29 is its provider subnet" "$(stat subnets)" "['172.22.169.40/29', '172.22.169.48/29']"
 
 exit $fail

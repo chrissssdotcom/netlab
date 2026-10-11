@@ -15,6 +15,34 @@
     quiet: true
   run_once: true
 
+- name: Work out where this PoP's IPv4 /29 sits (integer arithmetic, no extra collections)
+  ansible.builtin.set_fact:
+    pop_block4_in_ours: >-
+      {% set ns = namespace(ok=false) %}
+      {% for agg in dn42_aggregates4 %}
+      {% set a = agg.split('/')[0].split('.') | map('int') | list %}
+      {% set b = pop_block4.split('/')[0].split('.') | map('int') | list %}
+      {% set ai = ((a[0] * 256 + a[1]) * 256 + a[2]) * 256 + a[3] %}
+      {% set bi = ((b[0] * 256 + b[1]) * 256 + b[2]) * 256 + b[3] %}
+      {% if bi >= ai and bi + 8 <= ai + (2 ** (32 - (agg.split('/')[1] | int))) %}{% set ns.ok = true %}{% endif %}
+      {% endfor %}
+      {{ ns.ok }}
+  when: pop_block4 is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}/29$')
+
+- name: Preflight — every PoP has its own aligned IPv4 /29 inside our announced space
+  ansible.builtin.assert:
+    that:
+      - pop_block4 is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}/29$')
+      - (pop_block4_off | int) % 8 == 0
+      - pop_block4_in_ours | trim | bool
+      - (groups['dn42_routers'] | map('extract', hostvars, 'pop_block4') | unique | length)
+        == (groups['dn42_routers'] | length)
+    fail_msg: >-
+      pop_block4 ({{ pop_block4 | default('unset') }}) must be an aligned /29 inside {{ dn42_aggregates4 | join(' or ') }},
+      different on every PoP. The loopback ({{ loopback4 | default('?') }}), road-warrior /32 and VLAN/VPC
+      subnet are all derived from it.
+    quiet: true
+
 - name: Preflight — communities set for this PoP
   ansible.builtin.assert:
     that:

@@ -12,8 +12,8 @@ iBGP and to the world over your `/27` and `/48` aggregates.
 |---|---|---|
 | IPv6 | the PoP's `/52` — `fdcd:f79a:c76b:<N>000::/52`, 4096 × `/64` | already in iBGP, so any address in it is reachable network-wide with no routing change |
 | IPv6 already used | `<N>f00::/64` road warriors | start services at `<N>001` |
-| IPv4 | `172.22.169.32/27`: `.33-.37` routers, `.40/.48/.56` road-warrior `/29`s | **scarce**: `.38-.39` are spare. Prefer IPv6 for services; ask the registry for more IPv4 before building something v4-hungry |
-| Anycast IPv4 | `172.22.101.192/29` | bind the same address on several PoPs (see below) |
+| IPv4 | the PoP's `/29` (`pop_block4`): `+1` router, `+2` loopback, `+3` road warrior, `+4..+6` free | **scarce**: three hosts per PoP. Prefer IPv6 for services; ask the registry for more IPv4 before building something v4-hungry |
+| Anycast IPv4 | none reserved any more | the old anycast `/29` (`172.22.101.192/29`) is now r5's block; use a spare host address of a PoP block or new space |
 | Resources | 1 GB VPS (home PoP: whatever your VM has) | fine for BIRD + WireGuard + a web server; not for a database fleet |
 
 ## Pattern A — run the service on the router itself (start here)
@@ -23,7 +23,7 @@ to it. In `inventory/host_vars/r2.yml`:
 
 ```yaml
 loopback_extra6: ["fdcd:f79a:c76b:2001::80/128"]   # inside r2's /52
-loopback_extra4: ["172.22.169.38/32"]               # optional; IPv4 is scarce
+loopback_extra4: ["172.22.169.44/32"]               # r2's first free host address (+4); IPv4 is scarce
 dn42_input_tcp_ports: [80, 443]                     # allowed from dn42 and road warriors only
 ```
 
@@ -38,7 +38,7 @@ dnf install -y nginx        # example web server, in Rocky's AppStream
 ```nginx
 server {
 	listen [fdcd:f79a:c76b:2001::80]:80;
-	listen 172.22.169.38:80;
+	listen 172.22.169.44:80;
 	root /srv/www;
 }
 ```
@@ -59,7 +59,7 @@ a `/64` from the PoP's `/52` on a bridge and let the router route to it:
    block: `br-svc` ⇄ `wg-r*` / `dn42*` / `rw0` accept. Nothing else forwards, so
    without this the subnet is unreachable. This is the same shape as the `rw0` rules.
 3. No BIRD change for IPv6: the `/52` covers it. For an IPv4 subnet, add its prefix
-   to `pop_prefixes4` so iBGP carries it (that is what the road-warrior pool does).
+   to `pop_prefixes4` so iBGP carries it (the PoP's own `/29` is announced this way).
 
 The home PoP (r1) is the natural place for this: the "bridge" is your LAN, so
 real servers on the LAN become reachable from all of dn42.
@@ -70,10 +70,10 @@ real servers on the LAN become reachable from all of dn42.
 
 | Where | What happens |
 |---|---|
-| `provision.yml` | creates the PoP's VPC (`dn42-<host>`, private `10.200+id.0.0/24`) and attaches it as a second NIC when the server is created |
-| `site.yml` (`vpc` role) | finds that NIC (or use `vpc_interface`), brings it up with DHCP and **no default route**, and gives it the router's dn42 addresses: `<N>001::1/64` and optionally `vpc_dn42_net4` |
+| `provision.yml` | creates the PoP's VPC (`dn42-<host>`, subnet = the PoP's own `/29`) and attaches it as a second NIC when the server is created |
+| `site.yml` (`vpc` role) | finds that NIC (or use `vpc_interface`), brings it up with **no default route** and the router's dn42 addresses: `<N>001::1/64` and the first address of the PoP's `/29` |
 | firewall | forwards between the VPC NIC and dn42/road warriors, but only for packets whose **source is your own dn42 space**; private VPC addresses and anything spoofed are never forwarded. VPC hosts cannot reach the public Internet through the router |
-| BIRD | announces `vpc_dn42_net4` via iBGP; the IPv6 `/64` is inside the `/52` that is already announced |
+| BIRD | announces the PoP's `/29` via iBGP; the IPv6 `/64` is inside the `/52` that is already announced |
 
 Hosts in the VPC then need, on the VPC NIC: an address from `<N>001::/64` (and/or
 the IPv4 subnet), gateway `<N>001::1`, and routes for `fd00::/8` and
@@ -97,21 +97,23 @@ provider drop dn42 addresses" problem for IPv4 and gives you IPv6:
 | | Linode PoPs (r3, r5) | Vultr PoPs (r2, r4) |
 |---|---|---|
 | `vpc_type` | `vlan`: a plain Layer 2 network, free, no filtering, IPv6 works | `vpc`: VPC 2.0 with a **custom prefix** |
-| IPv4 | `vpc_dn42_net4`: a `/29` from your IPAM; the router takes `.1`, five hosts get the rest | the same `/29` becomes the VPC's own subnet at creation |
+| IPv4 | the PoP's `/29` (`pop_block4`): router `+1`, loopback `+2`, road warrior `+3`, hosts `+4..+6` | the same `/29` becomes the VPC's own subnet at creation |
 | IPv6 | `<N>001::/64`, router `::1` | the same, riding on top of the VPC (test it, see above) |
-| Addressing | static, set by the `vpc` role (no DHCP) | static when `vpc_dn42_net4` is set, otherwise provider DHCP |
+| Addressing | static, set by the `vpc` role (no DHCP) | static, set by the `vpc` role (override `vpc_dn42_net4: ""` to fall back to a private subnet and provider DHCP) |
 
 Per PoP in `host_vars`:
 
 ```yaml
 vpc_enabled: true
 vpc_type: vlan                 # r3, r5.  r2, r4: vpc (default)
-vpc_dn42_net4: 172.22.x.y/29   # from your IPAM; empty = IPv6 only
+pop_block4: 172.22.169.48/29   # this PoP's /29 from your IPAM; the VLAN/VPC subnet by default
 ```
 
-The role refuses an allocation that is misaligned, outside `dn42_aggregates4`, or overlaps
-the road-warrior pool, because BGP and the forwarding rules would silently drop it. A
-`/29` is enough: router + five hosts. Linode VLANs attach by label and appear on first
+Every PoP's `/29` is checked at the start of a run: aligned, inside `dn42_aggregates4`
+and different on every PoP, because BGP and the forwarding rules would silently drop
+anything else. Inside it the router is `+1` and the loopback `+2`, so only `+4..+6`
+(three addresses) are left for hosts. Do not hand `+0..+3` to a host: they belong to
+the router, the loopback and the road-warrior `/32`. Linode VLANs attach by label and appear on first
 use; both kinds attach **only when the server is created** (change an existing server in
 the provider console: Configurations → `eth1`, then reboot).
 
@@ -129,8 +131,8 @@ them a routed bridge as in Pattern B. Do not use published ports.
 - **TLS**: Let's Encrypt cannot validate a dn42 address, but it can issue for a
   real domain whose AAAA points at your dn42 address, using the DNS-01 challenge.
   Plain HTTP is also normal inside dn42.
-- **Anycast**: bind the same address from `172.22.101.192/29` on several PoPs
-  (`loopback_extra4: ["172.22.101.193/32"]`) with identical content. Each PoP
+- **Anycast**: bind the same address on several PoPs (`loopback_extra4`; use a spare
+  address inside a PoP's `/29`, since no block is reserved for it any more) with identical content. Each PoP
   prefers its own copy and visitors from outside land on the nearest one. Caveat:
   a PoP whose web server has died still attracts that address; withdrawing it
   automatically needs a health check driving BIRD, which this repo does not have yet.

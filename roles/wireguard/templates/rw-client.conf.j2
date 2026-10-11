@@ -3,7 +3,7 @@
 # private key generated on the device (it never touches the routers or this repo).
 [Interface]
 PrivateKey = <PRIVATE-KEY-OF-{{ rw_client.name | upper }}>
-Address = {% if rw_pool4 %}{{ rw_pool4_base }}.{{ (rw_pool4_off | int) + (rw_client.id | int) }}/32, {% endif %}{{ rw_prefix6 }}::{{ '%x' | format(rw_client.id | int) }}/128
+Address = {% if rw_client.ipv4 | default(false) %}{{ rw_addr4 }}/32, {% endif %}{{ rw_prefix6 }}::{{ '%x' | format(rw_client.id | int) }}/128
 MTU = {{ wg_mtu }}
 {% if rw_dns %}
 DNS = {{ rw_dns | join(', ') }}
