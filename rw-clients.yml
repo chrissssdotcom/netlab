@@ -2,7 +2,7 @@
 # device's own private key goes. Nothing secret is produced, so the output is safe in
 # a Semaphore task log; run locally it is also written to build/clients/.
 #   ansible-playbook rw-clients.yml                 # everything
-#   ansible-playbook rw-clients.yml --limit r2      # one PoP
+#   ansible-playbook rw-clients.yml --limit chr-fra-pe00      # one PoP
 #   ansible-playbook rw-clients.yml -e only=laptop  # one device
 - name: Road warrior client configs
   hosts: dn42_routers

@@ -6,6 +6,12 @@
     fail_msg: "router_id must be 1-15 (it drives loopbacks, /52 and ports)"
     quiet: true
 
+- name: Preflight — router name is chr-<loc>-pe<nn>
+  ansible.builtin.assert:
+    that: inventory_hostname is match('^chr-[a-z]{3}-pe[0-9]{2}$')
+    fail_msg: "{{ inventory_hostname }}: routers are named chr-<three-letter loc>-pe<nn> (e.g. chr-lax-pe00)"
+    quiet: true
+
 - name: Preflight — router_ids are unique across the mesh
   ansible.builtin.assert:
     that:
@@ -68,6 +74,10 @@
       - ansible_facts['distribution_major_version'] == '9'
     fail_msg: "Built and tested for Rocky Linux 9 (BIRD 2 from EPEL 9)"
     quiet: true
+
+- name: Hostname is the router's FQDN
+  ansible.builtin.hostname:
+    name: "{{ fqdn }}"
 
 - name: Install dnf plugins and EPEL
   ansible.builtin.dnf:

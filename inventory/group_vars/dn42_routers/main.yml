@@ -3,6 +3,8 @@ ansible_user: root            # Vultr and Linode Rocky images log in as root
 
 # --- Registry resources -------------------------------------------------------
 dn42_asn: 4242423420
+dn42_domain: dc.chrissss.dn42                    # routers are <inventory name>.<domain>
+fqdn: "{{ inventory_hostname }}.{{ dn42_domain }}"   # chr-<loc>-pe00.dc.chrissss.dn42
 dn42_prefix6: "fdcd:f79a:c76b"                  # the /48, without the trailing ::
 dn42_aggregates6: ["fdcd:f79a:c76b::/48"]       # announced to eBGP from every PoP
 dn42_aggregates4: ["172.22.169.32/27", "172.22.101.192/29"]
@@ -64,7 +66,7 @@ rw_dns: []                  # e.g. ["fd42:d42:d42:54::1"] — dn42 resolvers han
 #     id: 2                   # 2..254, unique; the IPv6 host number
 #     wg_pubkey: "base64-public-key-generated-on-the-device="
 #     ipv4: true              # optional: this device gets the PoP's IPv4 /32 (default: IPv6 only)
-#     pops: [r1, r2]          # optional: only these PoPs accept it (default: all)
+#     pops: [chr-adl-pe00, chr-fra-pe00]          # optional: only these PoPs accept it (default: all)
 rw_clients: []
 rw_ipv4_clients: "{{ rw_clients_here | selectattr('ipv4', 'defined') | selectattr('ipv4') | list }}"
 rw_clients_here: >-
@@ -76,7 +78,7 @@ rw_clients_here: >-
 #   VULTR_API_KEY, LINODE_TOKEN, DN42_ADMIN_SSH_PUBKEY (the public key that gets root)
 provision_enabled: "{{ provider in ['Vultr', 'Linode'] }}"   # the home PoP is not provisioned
 provision_create: true      # false = only look servers up, fail if one is missing
-provision_label: "dn42-{{ inventory_hostname }}"   # servers are found by this exact label
+provision_label: "{{ inventory_hostname }}"   # servers are found by this exact label (chr-<loc>-pe00)
 provision_tags: [dn42, ansible]
 provision_plan: "{{ {'Vultr': 'vc2-1c-1gb', 'Linode': 'g6-nanode-1'}[provider] }}"   # the $5 / 1 GB plans
 provision_image: "{{ {'Vultr': 1869, 'Linode': 'linode/rocky9'}[provider] }}"        # Rocky Linux 9
@@ -94,13 +96,15 @@ vultr_api_url: https://api.vultr.com/v2
 vpc_enabled: false          # set true per PoP in host_vars, then recreate the server (VPCs attach at creation)
 vpc_type: vpc              # vpc = provider VPC (private IPv4, DHCP); vlan = Linode VLAN (plain Layer 2, you assign
                            # the addresses, IPv6 works, nothing is filtered). vlan is Linode-only.
-vpc_label: "dn42-{{ inventory_hostname }}"   # also the VLAN label
+vpc_label: "{{ inventory_hostname }}"   # also the VLAN label
 vpc_subnet4: "{{ vpc_dn42_net4 if vpc_dn42_net4 else '10.' ~ (200 + (router_id | int)) ~ '.0.0/24' }}"
 # ^ the subnet created at the provider: your dn42 /29 when vpc_dn42_net4 is set (both Vultr and
 #   Linode accept custom prefixes), otherwise a private 10.20x.0.0/24 as a placeholder
 vpc_static: "{{ vpc_type == 'vlan' or (vpc_dn42_net4 | length > 0) }}"   # we assign the addresses (no DHCP)
 vpc_interface: ""           # the VPC NIC; empty = the one interface that is not public/tunnel
-vpc_iface: "{{ vpc_interface }}"   # resolved at run time by the vpc role
+vlan_id: ""                 # 802.1Q tag for a tagged VLAN on a physical NIC (the home PoP); empty on Linode
+vlan_parent: "{{ public_interface }}"   # the NIC that carries the tagged VLAN
+vpc_iface: "{{ (vlan_parent ~ '.' ~ vlan_id) if vlan_id | string | length > 0 else vpc_interface }}"   # resolved at run time by the vpc role
 vpc_dn42_net6: "{{ dn42_prefix6 }}:{{ '%x' | format(router_id | int) }}001::/64"   # inside the PoP /52; router = ::1
 vpc_dn42_net4: "{{ pop_block4 }}"   # the dn42 IPv4 subnet behind the router; default is the PoP's /29 ('' = IPv6 only)
 vpc_gw4: "{{ vpc_dn42_net4.split('/')[0].split('.')[0:3] | join('.') }}.{{ (vpc_dn42_net4.split('/')[0].split('.')[3] | int) + 1 }}"

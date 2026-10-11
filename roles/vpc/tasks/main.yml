@@ -5,6 +5,7 @@
   when: vpc_enabled | bool
   block:
     - name: Work out which NIC is the VPC
+      when: vlan_id | string | length == 0
       ansible.builtin.set_fact:
         vpc_candidates: >-
           {{ ansible_facts['interfaces']
@@ -12,6 +13,7 @@
              | reject('equalto', public_interface) | list }}
 
     - name: Exactly one candidate, or vpc_interface says which
+      when: vlan_id | string | length == 0
       ansible.builtin.assert:
         that: (vpc_interface | length > 0) or (vpc_candidates | length == 1)
         fail_msg: >-
@@ -21,6 +23,7 @@
         quiet: true
 
     - name: Use that NIC
+      when: vlan_id | string | length == 0
       ansible.builtin.set_fact:
         vpc_iface: "{{ vpc_interface if vpc_interface | length > 0 else vpc_candidates | first }}"
 

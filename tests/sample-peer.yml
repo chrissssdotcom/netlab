@@ -11,12 +11,12 @@ ebgp_peers:
     bfd: true
 
 # Road warrior clients: one everywhere (and the single IPv4 /32 at each PoP), one pinned to
-# two PoPs, one pinned to r3 — the keys are throwaway.
+# two PoPs, one pinned to chr-lax-pe00 — the keys are throwaway.
 rw_dns: ["fd42:d42:d42:54::1"]
 rw_clients:
   - { name: laptop,  id: 2, ipv4: true, wg_pubkey: "ZmFrZWZha2VmYWtlZmFrZWZha2VmYWtlZmFrZWZha2U=" }
-  - { name: phone,   id: 6, wg_pubkey: "ZmFrZTJmYWtlMmZha2UyZmFrZTJmYWtlMmZha2UyZmE=", pops: [r2, r4] }
-  - { name: tablet,  id: 3, wg_pubkey: "ZmFrZTNmYWtlM2Zha2UzZmFrZTNmYWtlM2Zha2UzZmE=", pops: [r3] }
+  - { name: phone,   id: 6, wg_pubkey: "ZmFrZTJmYWtlMmZha2UyZmFrZTJmYWtlMmZha2UyZmE=", pops: [chr-fra-pe00, chr-tyo-pe00] }
+  - { name: tablet,  id: 3, wg_pubkey: "ZmFrZTNmYWtlM2Zha2UzZmFrZTNmYWtlM2Zha2UzZmE=", pops: [chr-lax-pe00] }
 
 # VPC/VLAN behind each router (render-only: the NIC name is made up). The IPv4 subnet is
 # each PoP's own /29 (pop_block4), the default.

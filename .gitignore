@@ -1,2 +1,4 @@
 build/
 *.retry
+__pycache__/
+*.pyc

@@ -1,9 +1,9 @@
-# R3 — Linode (Akamai) Los Angeles (region id: us-lax)
+# chr-lax-pe00.dc.chrissss.dn42 — Linode Los Angeles (region id: us-lax)
 router_id: 3
 location: Los Angeles, US
 provider: Linode
 provider_region: us-lax
-public_interface: eth0         # TODO: check with `ip -br link`
+public_interface: eth0         # Linode public NIC; the VLAN arrives as eth1
 public_ipv4: 203.0.113.3       # TODO
 public_ipv6: ""
 

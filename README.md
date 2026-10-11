@@ -1,20 +1,21 @@
 # AS4242423420 — dn42 network as code
 
-Five PoPs, one ASN, full WireGuard mesh. Rocky Linux 9 + BIRD 2 (EPEL) + nftables,
-built and kept in shape by one Ansible playbook.
+Five PoPs, one ASN, full WireGuard mesh: four Linode servers and one at home, all named
+`chr-<loc>-pe00.dc.chrissss.dn42` and each with a VLAN behind it ([diagram](docs/NETWORK.md)).
+Rocky Linux 9 + BIRD 2 (EPEL) + nftables, built and kept in shape by Ansible.
 
-| PoP | Where | Provider (region id) | IPv4 /29 | Loopbacks | IPv6 block |
+| PoP | Where | Platform | IPv4 /29 | Loopbacks | IPv6 block |
 |---|---|---|---|---|---|
-| r1 | Adelaide, AU | Home | 172.22.169.32/29 | 172.22.169.34, fdcd:f79a:c76b::1 | fdcd:f79a:c76b:1000::/52 |
-| r2 | Frankfurt, DE | Vultr (`fra`) | 172.22.169.40/29 | 172.22.169.42, ::2 | :2000::/52 |
-| r3 | Los Angeles, US | Linode (`us-lax`) | 172.22.169.48/29 | 172.22.169.50, ::3 | :3000::/52 |
-| r4 | Tokyo, JP | Vultr (`nrt`) | 172.22.169.56/29 | 172.22.169.58, ::4 | :4000::/52 |
-| r5 | Sydney, AU | Linode (`ap-southeast`) | 172.22.101.192/29 | 172.22.101.194, ::5 | :5000::/52 |
+| chr-adl-pe00 | Adelaide, AU | home server | 172.22.169.32/29 | 172.22.169.34, fdcd:f79a:c76b::1 | fdcd:f79a:c76b:1000::/52 |
+| chr-fra-pe00 | Frankfurt, DE | Linode (`de-fra-2`) | 172.22.169.40/29 | 172.22.169.42, ::2 | :2000::/52 |
+| chr-lax-pe00 | Los Angeles, US | Linode (`us-lax`) | 172.22.169.48/29 | 172.22.169.50, ::3 | :3000::/52 |
+| chr-tyo-pe00 | Tokyo, JP | Linode (`jp-tyo-3`) | 172.22.169.56/29 | 172.22.169.58, ::4 | :4000::/52 |
+| chr-syd-pe00 | Sydney, AU | Linode (`ap-southeast`) | 172.22.101.192/29 | 172.22.101.194, ::5 | :5000::/52 |
 
 **IPv4 plan:** each PoP owns one `/29` (`pop_block4` in `host_vars`), laid out the same
 way everywhere: `+0` network, **`+1` router** (gateway for hosts behind it), **`+2`
 loopback**, **`+3` the one road-warrior `/32`**, `+4..+6` hosts behind the router, `+7`
-broadcast. The same `/29` is the provider VPC/VLAN subnet. Loopbacks, the road-warrior
+broadcast. The same `/29` is the VLAN subnet. Loopbacks, the road-warrior
 address and the router are derived from it, and a preflight rejects a block that is
 misaligned, outside `dn42_aggregates4` or shared between PoPs.
 
@@ -48,16 +49,16 @@ Rocky Linux 9 x64, smallest plan with IPv4, your SSH key added at creation:
 
 | PoP | Provider | Region | Plan |
 |---|---|---|---|
-| r2 | Vultr | Frankfurt | Cloud Compute Regular 1 GB ($5/mo) |
-| r3 | Linode | Los Angeles, CA | Nanode 1 GB ($5/mo) |
-| r4 | Vultr | Tokyo | Cloud Compute Regular 1 GB ($5/mo) |
-| r5 | Linode | Sydney, AU | Nanode 1 GB ($5/mo) |
+| chr-fra-pe00 | Linode | Frankfurt 2 (`de-fra-2`) | Nanode 1 GB ($5/mo) |
+| chr-lax-pe00 | Linode | Los Angeles, CA (`us-lax`) | Nanode 1 GB ($5/mo) |
+| chr-tyo-pe00 | Linode | Tokyo 3 (`jp-tyo-3`) | Nanode 1 GB ($5/mo) |
+| chr-syd-pe00 | Linode | Sydney, AU (`ap-southeast`) | Nanode 1 GB ($5/mo) |
 
 BIRD and WireGuard run comfortably in 1 GB. If you use the providers' cloud
 firewalls, allow UDP 42001–42015, UDP 20000–29999 (external peers), UDP 51820 (road
 warriors) and TCP 22.
 
-**r1 (home):** a Rocky 9 VM or mini PC. It dials every tunnel itself, so the home
+**chr-adl-pe00 (home):** a Rocky 9 VM or mini PC. It dials every tunnel itself, so the home
 router only needs to forward UDP if you want dn42 peers to connect *to* you
 (forward the `listen_port` of each external peer).
 
@@ -69,7 +70,7 @@ router only needs to forward UDP if you want dn42 peers to connect *to* you
 
 ## 2b. Or let the playbooks create the servers
 
-`provision.yml` creates the Vultr and Linode servers through their APIs (Rocky Linux 9,
+`provision.yml` creates the Linode servers through its API (Vultr is still supported: set `provider: Vultr` on a PoP) (Rocky Linux 9,
 the $5 / 1 GB plan, your SSH key), finds any that already exist by their label
 (`dn42-r2`, ...) and learns each public IP at run time, so no IP is ever committed.
 The home PoP is never touched. `deploy.yml` does that and then builds the routers.
@@ -86,7 +87,7 @@ ansible-playbook deploy.yml                # create what is missing, then build 
   servers in the provider's console, then re-run `deploy.yml` to rebuild.
 - A rebuilt server gets a new WireGuard key and IP. A full `deploy.yml` run updates
   the mesh; then re-commit `pubkeys/` and give any external dn42 peers the new key and endpoint.
-- Vultr: allow the runner's IP under *Account > API > Access Control* or every call
+- Only if you put a PoP at Vultr: allow the runner's IP under *Account > API > Access Control* or every call
   returns 401. Tokens need read/write on servers (Linode) / the default key (Vultr).
 - A fresh server accepts the provider's generated root password until the first run
   hardens SSH (a few minutes); `deploy.yml` does that straight away.
@@ -99,7 +100,7 @@ ansible-playbook deploy.yml                # create what is missing, then build 
   Attaching to an existing server is not automated: it is skipped with a notice, so
   attach it in the console or rebuild the server. `site.yml` then brings the NIC up
   and lets hosts behind it use the router as their dn42 gateway. See
-  [`docs/HOSTING.md`](docs/HOSTING.md#provider-vpc-behind-a-router).
+  [`docs/HOSTING.md`](docs/HOSTING.md#vlans-behind-every-router).
 - `provision_create: false` (or `-e provision_create=false`) turns it into a lookup
   that fails if a server is missing, which is a safe mode for routine runs.
 
@@ -108,7 +109,7 @@ ansible-playbook deploy.yml                # create what is missing, then build 
 ```bash
 pip install ansible-core            # ansible-core only; no collections needed
 ansible-playbook site.yml           # first run: all PoPs together (keys are exchanged)
-ansible-playbook site.yml --limit r3   # later: one PoP at a time
+ansible-playbook site.yml --limit chr-lax-pe00   # later: one PoP at a time
 ```
 
 Configs are syntax-checked on the router before they are installed
@@ -117,7 +118,7 @@ Configs are syntax-checked on the router before they are installed
 ## 4. Add an external dn42 peer
 
 Add an entry to that PoP's `ebgp_peers` (see the commented example in
-`host_vars/r2.yml`), then `ansible-playbook site.yml --limit r2`. Give the peer:
+`host_vars/r2.yml`), then `ansible-playbook site.yml --limit chr-fra-pe00`. Give the peer:
 your ASN, the PoP's public IP and the `listen_port`, your link-local
 `fe80::3420`, and the router's public key (`pubkeys/r2.pub`).
 
@@ -150,7 +151,7 @@ PoPs reach a connected device with no extra routing.
        id: 2                  # unique; the IPv6 host number
        ipv4: true             # optional: this device gets the PoP's IPv4 /32
        wg_pubkey: "<public key from the device>"
-       pops: [r1, r2, r3]     # optional; default is every PoP
+       pops: [chr-adl-pe00, chr-fra-pe00, chr-lax-pe00]     # optional; default is every PoP
    ```
 3. `ansible-playbook site.yml` applies it. Connected devices keep their session.
 4. `ansible-playbook rw-clients.yml -e only=laptop` prints one config per PoP (and
@@ -158,7 +159,7 @@ PoPs reach a connected device with no extra routing.
    `PrivateKey` placeholder with the device's own key.
 
 To remove a device, delete its entry and run `site.yml`. To switch the feature
-off, set `rw_enabled: false`. The home PoP (r1) needs a DDNS name in
+off, set `rw_enabled: false`. The home PoP (chr-adl-pe00) needs a DDNS name in
 `wg_endpoint` and a UDP 51820 port-forward before clients can use it.
 
 Further reading: [`docs/SEMAPHORE.md`](docs/SEMAPHORE.md) to run this from Semaphore,

@@ -4,11 +4,17 @@
 # gateway for dn42 traffic of the hosts behind it.
 [connection]
 id=dn42-vpc
-type=ethernet
+type={{ 'vlan' if vlan_id | string | length > 0 else 'ethernet' }}
 interface-name={{ vpc_iface }}
 autoconnect=true
 
+{% if vlan_id | string | length > 0 %}
+[vlan]
+id={{ vlan_id }}
+parent={{ vlan_parent }}
+{% else %}
 [ethernet]
+{% endif %}
 
 [ipv4]
 {% if vpc_static %}

@@ -13,7 +13,7 @@ iBGP and to the world over your `/27` and `/48` aggregates.
 | IPv6 | the PoP's `/52` — `fdcd:f79a:c76b:<N>000::/52`, 4096 × `/64` | already in iBGP, so any address in it is reachable network-wide with no routing change |
 | IPv6 already used | `<N>f00::/64` road warriors | start services at `<N>001` |
 | IPv4 | the PoP's `/29` (`pop_block4`): `+1` router, `+2` loopback, `+3` road warrior, `+4..+6` free | **scarce**: three hosts per PoP. Prefer IPv6 for services; ask the registry for more IPv4 before building something v4-hungry |
-| Anycast IPv4 | none reserved any more | the old anycast `/29` (`172.22.101.192/29`) is now r5's block; use a spare host address of a PoP block or new space |
+| Anycast IPv4 | none reserved any more | the old anycast `/29` (`172.22.101.192/29`) is now chr-syd-pe00's block; use a spare host address of a PoP block or new space |
 | Resources | 1 GB VPS (home PoP: whatever your VM has) | fine for BIRD + WireGuard + a web server; not for a database fleet |
 
 ## Pattern A — run the service on the router itself (start here)
@@ -22,12 +22,12 @@ Put the service address on the router's `dn42` dummy interface and bind the daem
 to it. In `inventory/host_vars/r2.yml`:
 
 ```yaml
-loopback_extra6: ["fdcd:f79a:c76b:2001::80/128"]   # inside r2's /52
-loopback_extra4: ["172.22.169.44/32"]               # r2's first free host address (+4); IPv4 is scarce
+loopback_extra6: ["fdcd:f79a:c76b:2001::80/128"]   # inside chr-fra-pe00's /52
+loopback_extra4: ["172.22.169.44/32"]               # chr-fra-pe00's first free host address (+4); IPv4 is scarce
 dn42_input_tcp_ports: [80, 443]                     # allowed from dn42 and road warriors only
 ```
 
-`ansible-playbook site.yml --limit r2` then creates the addresses, opens the ports
+`ansible-playbook site.yml --limit chr-fra-pe00` then creates the addresses, opens the ports
 on `wg-r*`, `dn42-*` and `rw0` (never on the public interface) and BIRD starts
 carrying the `/128` and `/32`, because anything on the dummy that falls inside your
 aggregates is exported to iBGP. Install the daemon yourself or add a role.
@@ -61,10 +61,10 @@ a `/64` from the PoP's `/52` on a bridge and let the router route to it:
 3. No BIRD change for IPv6: the `/52` covers it. For an IPv4 subnet, add its prefix
    to `pop_prefixes4` so iBGP carries it (the PoP's own `/29` is announced this way).
 
-The home PoP (r1) is the natural place for this: the "bridge" is your LAN, so
+The home PoP (chr-adl-pe00) is the natural place for this: the "bridge" is your LAN, so
 real servers on the LAN become reachable from all of dn42.
 
-### Provider VPC behind a router
+### Provider VPC behind a router (Vultr, or Linode if you prefer VPCs)
 
 `vpc_enabled: true` (per PoP, in `host_vars`) automates the plumbing:
 
@@ -89,33 +89,35 @@ IPv6 (Linode's is in limited availability), so IPv6 only works if that test pass
 means rebuilding it. Deleting a VPC (or the server) stays a manual step in the
 provider console.
 
-#### Your own addresses: VLANs and custom prefixes (recommended)
+#### VLANs behind every router
 
-Both providers let you choose the network yourself, which removes the "will the
-provider drop dn42 addresses" problem for IPv4 and gives you IPv6:
+Every PoP has a VLAN behind it with the PoP's own `/29` and `<N>001::/64`:
 
-| | Linode PoPs (r3, r5) | Vultr PoPs (r2, r4) |
+| | Cloud PoPs (Linode) | Home (`chr-adl-pe00`) |
 |---|---|---|
-| `vpc_type` | `vlan`: a plain Layer 2 network, free, no filtering, IPv6 works | `vpc`: VPC 2.0 with a **custom prefix** |
-| IPv4 | the PoP's `/29` (`pop_block4`): router `+1`, loopback `+2`, road warrior `+3`, hosts `+4..+6` | the same `/29` becomes the VPC's own subnet at creation |
-| IPv6 | `<N>001::/64`, router `::1` | the same, riding on top of the VPC (test it, see above) |
-| Addressing | static, set by the `vpc` role (no DHCP) | static, set by the `vpc` role (override `vpc_dn42_net4: ""` to fall back to a private subnet and provider DHCP) |
+| `vpc_type` | `vlan`: a plain Layer 2 network, free, no filtering, IPv6 works | `vlan` too, as an 802.1Q tagged VLAN: set `vlan_id` and `vlan_parent` |
+| IPv4 | the PoP's `/29` (`pop_block4`): router `+1`, loopback `+2`, road warrior `+3`, hosts `+4..+6` | the same |
+| IPv6 | `<N>001::/64`, router `::1` | the same |
+| Addressing | static, set by the `vpc` role (no DHCP) | static, on the tagged sub-interface (`ens18.42`) |
+| Created by | `provision.yml`, attached as `eth1` at server creation | you: make the switch port a trunk carrying the VLAN |
 
-Per PoP in `host_vars`:
+Per PoP in `host_vars` (the shipped files already have this):
 
 ```yaml
 vpc_enabled: true
-vpc_type: vlan                 # r3, r5.  r2, r4: vpc (default)
-pop_block4: 172.22.169.48/29   # this PoP's /29 from your IPAM; the VLAN/VPC subnet by default
+vpc_type: vlan
+pop_block4: 172.22.169.48/29   # this PoP's /29 from your IPAM
+# home only:
+vlan_id: 42
+vlan_parent: ens18             # the trunk NIC
 ```
 
 Every PoP's `/29` is checked at the start of a run: aligned, inside `dn42_aggregates4`
-and different on every PoP, because BGP and the forwarding rules would silently drop
-anything else. Inside it the router is `+1` and the loopback `+2`, so only `+4..+6`
-(three addresses) are left for hosts. Do not hand `+0..+3` to a host: they belong to
-the router, the loopback and the road-warrior `/32`. Linode VLANs attach by label and appear on first
-use; both kinds attach **only when the server is created** (change an existing server in
-the provider console: Configurations → `eth1`, then reboot).
+and different on every PoP. Inside it the router is `+1` and the loopback `+2`, so only
+`+4..+6` (three addresses) are left for hosts; `+0..+3` belong to the router, the
+loopback and the road-warrior `/32`. A Linode VLAN attaches **only when the server is
+created**; for an existing server, change `eth1` in its configuration profile in the
+Linode console and reboot.
 
 **Containers**: the ruleset starts with `flush ruleset`, which also deletes the NAT
 tables Docker and podman create, breaking their networking on the next nftables

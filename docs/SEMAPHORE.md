@@ -87,8 +87,8 @@ have the runner's IP in its API access control list.
 Type **File**, path `inventory/hosts.yml`, repository above, user credentials
 `dn42-routers-ssh`. `ansible_user: root` is already set in `group_vars`.
 
-`r1` has a LAN address (`192.168.88.10`). Semaphore must run on that LAN, or reach
-it over a VPN, for r1 to be managed. Once the road-warrior tunnel to a cloud PoP is
+`chr-adl-pe00` has a LAN address (`192.168.88.10`). Semaphore must run on that LAN, or reach
+it over a VPN, for chr-adl-pe00 to be managed. Once the road-warrior tunnel to a cloud PoP is
 up, a laptop can do this from anywhere.
 
 ## 6. Task templates
@@ -96,7 +96,7 @@ up, a laptop can do this from anywhere.
 | Template | Playbook | Notes |
 |---|---|---|
 | `dn42 - deploy all` | `site.yml` | the normal one; idempotent, safe to re-run |
-| `dn42 - deploy one PoP` | `site.yml` | enable *Allow CLI args in task* (or use the template's *Limit* field if your version has one) and pass `--limit r3`; roll out risky changes one PoP at a time |
+| `dn42 - deploy one PoP` | `site.yml` | enable *Allow CLI args in task* (or use the template's *Limit* field if your version has one) and pass `--limit chr-lax-pe00`; roll out risky changes one PoP at a time |
 | `dn42 - create servers + deploy` | `deploy.yml` | creates any missing VPS, then builds everything; needs the secret variables from section 4 |
 | `dn42 - servers dry run` | `provision.yml` | add `--check` as the template's CLI args: lists what would be created and creates nothing |
 | `dn42 - road warrior configs` | `rw-clients.yml` | prints the client config for every device and PoP in the task log; add `-e only=laptop` for one device |

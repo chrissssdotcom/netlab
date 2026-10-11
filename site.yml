@@ -1,5 +1,5 @@
 # Build or update every dn42 PoP:   ansible-playbook site.yml
-# One PoP after the first full run: ansible-playbook site.yml --limit r3
+# One PoP after the first full run: ansible-playbook site.yml --limit chr-lax-pe00
 - name: Build dn42 routers (AS4242423420)
   hosts: dn42_routers
   become: true

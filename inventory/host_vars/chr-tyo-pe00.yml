@@ -1,9 +1,9 @@
-# R4 — Vultr Tokyo (region id: nrt)
+# chr-tyo-pe00.dc.chrissss.dn42 — Linode Tokyo 3 (region id: jp-tyo-3)
 router_id: 4
 location: Tokyo, JP
-provider: Vultr
-provider_region: nrt
-public_interface: enp1s0       # TODO: check with `ip -br link`
+provider: Linode
+provider_region: jp-tyo-3
+public_interface: eth0         # Linode public NIC; the VLAN arrives as eth1
 public_ipv4: 203.0.113.4       # TODO
 public_ipv6: ""
 
@@ -16,6 +16,7 @@ ebgp_peers: []
 # Provider VPC behind this router: created and attached when the server is first created
 # (see docs/HOSTING.md, "Provider VPC behind a router")
 vpc_enabled: true
+vpc_type: vlan             # Linode VLAN: plain Layer 2, IPv6 works, nothing filtered
 
 # IPv4: this PoP's /29 (one per PoP, from dn42_aggregates4). Layout: +1 router/gateway,
 # +2 loopback, +3 road-warrior /32, +4..+6 hosts behind the router. The same /29 is the

@@ -1,4 +1,4 @@
-# R1 — home PoP, Adelaide, AU (residential, public IP, no CGNAT)
+# chr-adl-pe00.dc.chrissss.dn42 — home PoP, Adelaide, AU (residential, public IP, no CGNAT)
 router_id: 1
 location: Adelaide, AU
 provider: Home
@@ -20,3 +20,11 @@ ebgp_peers: []
 # +2 loopback, +3 road-warrior /32, +4..+6 hosts behind the router. The same /29 is the
 # provider VPC/VLAN subnet when vpc_enabled is true. Allocated in IPAM.
 pop_block4: 172.22.169.32/29
+
+# Home VLAN: an 802.1Q-tagged VLAN on the LAN NIC carries this PoP's /29 and the dn42 hosts behind
+# it. Configure the switch port as a trunk carrying this VLAN to the router. Not provisioned by an
+# API (the home PoP is not a cloud server), so set the NIC and the VLAN id to match your network.
+vpc_enabled: true
+vpc_type: vlan
+vlan_id: 42                    # TODO: the VLAN id on your home switch/router
+vlan_parent: "{{ public_interface }}"   # the trunk NIC; change if the VLAN rides a different one

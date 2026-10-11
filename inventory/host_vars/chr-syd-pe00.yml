@@ -1,9 +1,9 @@
-# R5 — Linode (Akamai) Sydney (region id: ap-southeast)
+# chr-syd-pe00.dc.chrissss.dn42 — Linode Sydney (region id: ap-southeast)
 router_id: 5
 location: Sydney, AU
 provider: Linode
 provider_region: ap-southeast
-public_interface: eth0         # TODO: check with `ip -br link`
+public_interface: eth0         # Linode public NIC; the VLAN arrives as eth1
 public_ipv4: 203.0.113.5       # TODO
 public_ipv6: ""
 

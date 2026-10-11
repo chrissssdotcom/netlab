@@ -203,7 +203,7 @@ def main():
             "app": "ansible", "type": "", "autorun": False, "suppress_success_alerts": False})
 
     template("dn42 - deploy all", "site.yml", "Build or update every PoP (idempotent)")
-    template("dn42 - deploy one PoP", "site.yml", "Pass --limit rN as CLI args when running", allow_args=True)
+    template("dn42 - deploy one PoP", "site.yml", "Pass --limit chr-<loc>-pe00 as CLI args when running", allow_args=True)
     template("dn42 - create servers + deploy", "deploy.yml", "Create missing VPSes via provider APIs, then build")
     template("dn42 - servers dry run", "provision.yml", "Shows which servers would be created; creates nothing", ["--check"])
     template("dn42 - road warrior configs", "rw-clients.yml", "Client configs per device and PoP; -e only=<name>", allow_args=True)
