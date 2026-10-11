@@ -1,0 +1,13 @@
+# R5 — Linode (Akamai) Sydney (region id: ap-southeast)
+router_id: 5
+location: Sydney, AU
+provider: Linode
+provider_region: ap-southeast
+public_interface: eth0         # TODO: check with `ip -br link`
+public_ipv4: 203.0.113.5       # TODO
+public_ipv6: ""
+
+community_region: 53           # Pacific & Oceania
+community_country: 1036        # Australia
+
+ebgp_peers: []

@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# External dn42 peering: {{ item.name }} (AS{{ item.asn }})
+[Interface]
+ListenPort = {{ item.listen_port | default(20000 + ((item.asn | int) % 10000)) }}
+Address = {{ item.local_ll | default(ebgp_local_ll) }}/64
+MTU = {{ item.mtu | default(wg_mtu) }}
+Table = off
+PostUp = wg set %i private-key /etc/wireguard/node.key
+
+[Peer]
+PublicKey = {{ item.wg_pubkey }}
+# dn42 and friends only — a peer can never tunnel public Internet traffic to us
+AllowedIPs = 172.16.0.0/12, 10.0.0.0/8, fd00::/8, fe80::/64
+{% if item.wg_endpoint | default('') %}
+Endpoint = {{ item.wg_endpoint }}
+{% endif %}
+PersistentKeepalive = {{ wg_keepalive }}

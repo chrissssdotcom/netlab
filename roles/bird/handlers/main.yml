@@ -1,0 +1,3 @@
+- name: Reconfigure BIRD
+  ansible.builtin.command: birdc configure
+  changed_when: true

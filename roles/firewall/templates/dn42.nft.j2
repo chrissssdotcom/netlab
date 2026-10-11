@@ -1,0 +1,93 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+# {{ inventory_hostname }} — default-deny inbound; forward only dn42 <-> dn42.
+{% set mesh_ports = [] %}
+{% for p in mesh_peers %}{% set _ = mesh_ports.append(mesh_port_base + (hostvars[p].router_id | int)) %}{% endfor %}
+{% set ext_ports = [] %}
+{% for p in ebgp_peers %}{% set _ = ext_ports.append(p.listen_port | default(20000 + ((p.asn | int) % 10000))) %}{% endfor %}
+{% set ssh4 = ssh_allow_from | reject('search', ':') | list %}
+{% set ssh6 = ssh_allow_from | select('search', ':') | list %}
+
+flush ruleset
+
+table inet dn42 {
+	set wg_ports {
+		type inet_service
+		elements = { {{ (mesh_ports + ext_ports) | join(', ') }} }
+	}
+{% if ssh4 %}
+	set ssh_allow4 {
+		type ipv4_addr
+		flags interval
+		elements = { {{ ssh4 | join(', ') }} }
+	}
+{% endif %}
+{% if ssh6 %}
+	set ssh_allow6 {
+		type ipv6_addr
+		flags interval
+		elements = { {{ ssh6 | join(', ') }} }
+	}
+{% endif %}
+
+	chain input {
+		type filter hook input priority filter; policy drop;
+		ct state vmap { established : accept, related : accept, invalid : drop }
+		iif "lo" accept
+
+		# ICMP and ICMPv6 (neighbour discovery, PMTUD, ping, traceroute)
+		meta l4proto { icmp, ipv6-icmp } limit rate 100/second burst 200 packets accept
+
+		# WireGuard: mesh + external peering
+		udp dport @wg_ports accept
+
+		# SSH (rate-limited)
+{% if ssh4 or ssh6 %}
+{% if ssh4 %}
+		ip saddr @ssh_allow4 tcp dport 22 ct state new limit rate 30/minute accept
+{% endif %}
+{% if ssh6 %}
+		ip6 saddr @ssh_allow6 tcp dport 22 ct state new limit rate 30/minute accept
+{% endif %}
+{% else %}
+		tcp dport 22 ct state new limit rate 30/minute accept
+{% endif %}
+
+		# Routing protocols only ever arrive inside tunnels
+		iifname "wg-r*" tcp dport 179 accept
+		iifname "dn42-*" tcp dport 179 accept
+		iifname "wg-r*" meta l4proto 89 accept
+		iifname "wg-r*" udp dport { 3784, 3785, 4784 } accept
+{% for p in ebgp_peers if p.bfd | default(false) %}
+		iifname "dn42-{{ p.name }}" udp dport { 3784, 3785, 4784 } accept
+{% endfor %}
+
+		# traceroute to the router gets a proper port-unreachable
+		iifname "wg-r*" udp dport 33434-33534 reject
+		iifname "dn42-*" udp dport 33434-33534 reject
+{% if dn42_input_tcp_ports %}
+
+		# Services on this router reachable from dn42
+		iifname "wg-r*" tcp dport { {{ dn42_input_tcp_ports | join(', ') }} } accept
+		iifname "dn42-*" tcp dport { {{ dn42_input_tcp_ports | join(', ') }} } accept
+{% endif %}
+{% if dn42_input_udp_ports %}
+		iifname "wg-r*" udp dport { {{ dn42_input_udp_ports | join(', ') }} } accept
+		iifname "dn42-*" udp dport { {{ dn42_input_udp_ports | join(', ') }} } accept
+{% endif %}
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+
+		# Tunnel MTU is below 1500: clamp TCP MSS on everything we forward
+		tcp flags syn tcp option maxseg size set rt mtu
+
+		# dn42 <-> dn42 only. Stateless on purpose: mesh paths can be asymmetric.
+		# Nothing is ever forwarded between dn42 and the public Internet.
+		iifname "wg-r*" oifname "wg-r*" accept
+		iifname "wg-r*" oifname "dn42*" accept
+		iifname "dn42*" oifname "wg-r*" accept
+		iifname "dn42*" oifname "dn42*" accept
+	}
+}

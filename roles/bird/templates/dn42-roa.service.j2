@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Refresh dn42 ROA tables for BIRD
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dn42-roa-update

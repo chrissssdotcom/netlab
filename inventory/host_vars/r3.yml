@@ -1,0 +1,13 @@
+# R3 — Linode (Akamai) Los Angeles (region id: us-lax)
+router_id: 3
+location: Los Angeles, US
+provider: Linode
+provider_region: us-lax
+public_interface: eth0         # TODO: check with `ip -br link`
+public_ipv4: 203.0.113.3       # TODO
+public_ipv6: ""
+
+community_region: 44           # North America-W
+community_country: 1840        # United States
+
+ebgp_peers: []

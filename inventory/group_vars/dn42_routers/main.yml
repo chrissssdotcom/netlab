@@ -1,0 +1,53 @@
+# Network-wide settings for AS4242423420. Per-router values live in host_vars/.
+ansible_user: root            # Vultr and Linode Rocky images log in as root
+
+# --- Registry resources -------------------------------------------------------
+dn42_asn: 4242423420
+dn42_prefix6: "fdcd:f79a:c76b"                  # the /48, without the trailing ::
+dn42_aggregates6: ["fdcd:f79a:c76b::/48"]       # announced to eBGP from every PoP
+dn42_aggregates4: ["172.22.169.32/27", "172.22.101.192/29"]
+dn42_loopback_net6: "fdcd:f79a:c76b::/64"       # router /128 loopbacks live here
+dn42_anycast4: "172.22.101.192/29"              # anycast services, bound at every PoP
+
+# --- Derived per router from router_id (1-15). Override in host_vars only if needed.
+loopback4: "172.22.169.{{ 32 + (router_id | int) }}"
+loopback6: "{{ dn42_prefix6 }}::{{ '%x' | format(router_id | int) }}"
+pop_prefix6: "{{ dn42_prefix6 }}:{{ '%x' | format(router_id | int) }}000::/52"
+pop_prefixes4: []          # extra IPv4 service routes this PoP originates internally (e.g. 172.22.169.48/32)
+loopback_extra4: []        # extra addresses bound on the dn42 dummy, e.g. "172.22.101.193/32" (anycast DNS)
+loopback_extra6: []
+
+# The other routers in the mesh (do not edit)
+mesh_peers: "{{ groups['dn42_routers'] | difference([inventory_hostname]) | sort }}"
+
+# --- WireGuard ------------------------------------------------------------------
+wg_endpoint: "{{ public_ipv4 | default('') }}"   # what other PoPs dial; '' = they wait for us
+wg_mtu: 1420
+wg_keepalive: 25
+mesh_port_base: 42000       # host i listens for peer j on 42000+j
+mesh_default_cost: 100      # OSPF cost per mesh link; set mesh_costs to ~RTT in ms once measured
+mesh_costs: {}
+ebgp_local_ll: "fe80::3420" # our link-local on external peering tunnels
+pubkey_dir: "{{ inventory_dir }}/../pubkeys"   # node public keys are cached here
+
+# --- BGP policy -----------------------------------------------------------------
+bgp_import_limit: 10000     # per channel, per eBGP session — far above the dn42 table size
+bgp_max_path_len: 25
+ebgp_export_prepend: 0
+ebgp_peers: []
+
+# --- BIRD -----------------------------------------------------------------------
+bird_config_path: /etc/bird.conf
+bird_roa_dir: /etc/bird
+roa_url_v4: https://dn42.burble.com/roa/dn42_roa_bird2_4.conf
+roa_url_v6: https://dn42.burble.com/roa/dn42_roa_bird2_6.conf
+roa_min_entries: 50         # refuse to load a ROA file smaller than this (broken download)
+bfd_interval_ms: 500
+bfd_multiplier: 6           # ~3 s to detect a dead mesh link
+
+# --- Host hardening -------------------------------------------------------------
+ssh_harden: true
+ssh_allow_from: []          # e.g. ["198.51.100.0/24", "2001:db8::/32"]; empty = anywhere, rate-limited
+dn42_input_tcp_ports: []    # services on the router itself reachable from dn42 (e.g. [53])
+dn42_input_udp_ports: []
+auto_security_updates: true

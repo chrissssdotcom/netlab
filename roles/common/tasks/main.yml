@@ -1,0 +1,137 @@
+- name: Preflight — router_id is set and in range 1-15
+  ansible.builtin.assert:
+    that:
+      - router_id is defined
+      - (router_id | int) >= 1 and (router_id | int) <= 15
+    fail_msg: "router_id must be 1-15 (it drives loopbacks, /52 and ports)"
+    quiet: true
+
+- name: Preflight — router_ids are unique across the mesh
+  ansible.builtin.assert:
+    that:
+      - (groups['dn42_routers'] | map('extract', hostvars, 'router_id') | unique | length)
+        == (groups['dn42_routers'] | length)
+    fail_msg: "Two routers share a router_id"
+    quiet: true
+  run_once: true
+
+- name: Preflight — communities set for this PoP
+  ansible.builtin.assert:
+    that:
+      - (community_region | int) >= 41 and (community_region | int) <= 70
+      - (community_country | int) >= 1000 and (community_country | int) <= 1999
+    quiet: true
+
+- name: Preflight — external peer names are valid
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[a-z0-9]{1,10}$')
+      - item.asn is defined and item.wg_pubkey is defined and item.peer_ll is defined
+    fail_msg: "ebgp_peers: name must be a-z0-9, max 10 chars (interface dn42-<name>); asn, wg_pubkey, peer_ll required"
+    quiet: true
+  loop: "{{ ebgp_peers }}"
+  loop_control:
+    label: "{{ item.name | default('?') }}"
+
+- name: Rocky Linux 9 only
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] in ['Rocky', 'AlmaLinux', 'RedHat']
+      - ansible_facts['distribution_major_version'] == '9'
+    fail_msg: "Built and tested for Rocky Linux 9 (BIRD 2 from EPEL 9)"
+    quiet: true
+
+- name: Install dnf plugins and EPEL
+  ansible.builtin.dnf:
+    name: [dnf-plugins-core, epel-release]
+    state: present
+
+- name: Enable CRB (EPEL dependencies)
+  ansible.builtin.command: dnf config-manager --set-enabled crb
+  changed_when: false
+
+- name: Install router packages
+  ansible.builtin.dnf:
+    name:
+      - bird            # BIRD 2.x on EPEL 9
+      - wireguard-tools
+      - nftables
+      - chrony
+      - curl
+      - iproute
+      - tcpdump
+      - mtr
+      - traceroute
+    state: present
+
+- name: Routing sysctls
+  ansible.builtin.template:
+    src: 90-dn42.conf.j2
+    dest: /etc/sysctl.d/90-dn42.conf
+    mode: "0644"
+  notify: Apply sysctls
+
+- name: Keep NetworkManager away from tunnels and the dn42 dummy
+  ansible.builtin.copy:
+    dest: /etc/NetworkManager/conf.d/90-dn42-unmanaged.conf
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      [keyfile]
+      unmanaged-devices=interface-name:wg-r*;interface-name:dn42*
+  notify: Reload NetworkManager
+
+- name: Loopback (dummy) interface unit
+  ansible.builtin.template:
+    src: dn42-loopback.service.j2
+    dest: /etc/systemd/system/dn42-loopback.service
+    mode: "0644"
+  notify: Restart dn42 loopback
+
+- name: Loopback interface enabled and up
+  ansible.builtin.systemd_service:
+    name: dn42-loopback.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Time sync (BFD, logs and ROA timestamps depend on it)
+  ansible.builtin.systemd_service:
+    name: chronyd
+    enabled: true
+    state: started
+
+- name: SSH — keys only
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-dn42.conf
+    mode: "0600"
+    content: |
+      # {{ ansible_managed }}
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      MaxAuthTries 3
+      LoginGraceTime 20
+  when: ssh_harden | bool
+  notify: Reload sshd
+
+- name: Automatic security updates
+  when: auto_security_updates | bool
+  block:
+    - name: Install dnf-automatic
+      ansible.builtin.dnf:
+        name: dnf-automatic
+        state: present
+    - name: Security updates only, applied automatically
+      ansible.builtin.lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: "^{{ item.key }}\\s*="
+        line: "{{ item.key }} = {{ item.value }}"
+      loop:
+        - { key: upgrade_type, value: security }
+        - { key: apply_updates, value: "yes" }
+    - name: Enable the dnf-automatic timer
+      ansible.builtin.systemd_service:
+        name: dnf-automatic.timer
+        enabled: true
+        state: started

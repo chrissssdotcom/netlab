@@ -1,0 +1,98 @@
+- name: WireGuard directory
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    mode: "0700"
+
+- name: Node private key — generated on the router, never leaves it
+  ansible.builtin.shell: umask 077 && wg genkey > /etc/wireguard/node.key
+  args:
+    creates: /etc/wireguard/node.key
+
+- name: Read node public key
+  ansible.builtin.shell: wg pubkey < /etc/wireguard/node.key
+  register: wg_pub
+  changed_when: false
+
+- name: Cache public key on the control node (lets --limit runs work later)
+  ansible.builtin.copy:
+    content: "{{ wg_pub.stdout }}\n"
+    dest: "{{ pubkey_dir }}/{{ inventory_hostname }}.pub"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+
+- name: Every mesh peer's public key is known
+  ansible.builtin.assert:
+    that: (pubkey_dir ~ '/' ~ item ~ '.pub') is file
+    fail_msg: "No public key cached for {{ item }} — run the playbook once without --limit"
+    quiet: true
+  loop: "{{ mesh_peers }}"
+
+- name: Mesh tunnels (one interface per other PoP)
+  ansible.builtin.template:
+    src: wg-mesh.conf.j2
+    dest: "/etc/wireguard/wg-r{{ hostvars[item].router_id }}.conf"
+    mode: "0600"
+  loop: "{{ mesh_peers }}"
+  register: wg_mesh_cfg
+
+- name: External dn42 peering tunnels
+  ansible.builtin.template:
+    src: wg-ext.conf.j2
+    dest: "/etc/wireguard/dn42-{{ item.name }}.conf"
+    mode: "0600"
+  loop: "{{ ebgp_peers }}"
+  loop_control:
+    label: "dn42-{{ item.name }}"
+  register: wg_ext_cfg
+
+- name: Work out which tunnels should exist
+  ansible.builtin.set_fact:
+    wg_wanted: >-
+      {{ (mesh_peers | map('extract', hostvars, 'router_id') | map('regex_replace', '^', 'wg-r') | list)
+         + (ebgp_peers | map(attribute='name') | map('regex_replace', '^', 'dn42-') | list) }}
+
+- name: Tunnels enabled and up
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ item }}"
+    enabled: true
+    state: started
+  loop: "{{ wg_wanted }}"
+
+- name: Apply changed peer settings in place (no tunnel flap)
+  ansible.builtin.shell: >-
+    wg syncconf {{ iface }} <(wg-quick strip {{ iface }}) &&
+    wg set {{ iface }} private-key /etc/wireguard/node.key
+  args:
+    executable: /bin/bash
+  changed_when: true
+  vars:
+    iface: "{{ item.dest | basename | regex_replace('\\.conf$', '') }}"
+  loop: "{{ wg_mesh_cfg.results + wg_ext_cfg.results }}"
+  loop_control:
+    label: "{{ item.dest | default('') | basename }}"
+  when: item.changed
+
+- name: Find tunnel configs on the router
+  ansible.builtin.find:
+    paths: /etc/wireguard
+    patterns: ["wg-r*.conf", "dn42-*.conf"]
+  register: wg_existing
+
+- name: Remove tunnels no longer in the inventory
+  vars:
+    stale: "{{ wg_existing.files | map(attribute='path') | map('basename')
+               | map('regex_replace', '\\.conf$', '') | reject('in', wg_wanted) | list }}"
+  block:
+    - name: Stop stale tunnels
+      ansible.builtin.systemd_service:
+        name: "wg-quick@{{ item }}"
+        state: stopped
+        enabled: false
+      loop: "{{ stale }}"
+    - name: Delete stale tunnel configs
+      ansible.builtin.file:
+        path: "/etc/wireguard/{{ item }}.conf"
+        state: absent
+      loop: "{{ stale }}"

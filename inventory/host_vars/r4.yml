@@ -1,0 +1,13 @@
+# R4 — Vultr Tokyo (region id: nrt)
+router_id: 4
+location: Tokyo, JP
+provider: Vultr
+provider_region: nrt
+public_interface: enp1s0       # TODO: check with `ip -br link`
+public_ipv4: 203.0.113.4       # TODO
+public_ipv6: ""
+
+community_region: 52           # Asia-E
+community_country: 1392        # Japan
+
+ebgp_peers: []

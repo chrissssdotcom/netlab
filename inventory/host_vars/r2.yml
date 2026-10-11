@@ -1,0 +1,25 @@
+# R2 — Vultr Frankfurt (region id: fra)
+router_id: 2
+location: Frankfurt, DE
+provider: Vultr
+provider_region: fra
+public_interface: enp1s0       # TODO: check with `ip -br link`
+public_ipv4: 203.0.113.2       # TODO
+public_ipv6: ""                # optional
+
+community_region: 41           # Europe
+community_country: 1276        # Germany
+
+# External dn42 neighbours at this PoP. One entry per peer; the tunnel is
+# dn42-<name>, the BGP session ebgp_<name>. Example (uncomment and fill in):
+ebgp_peers: []
+#  - name: example              # a-z0-9, max 10 chars
+#    asn: 4242421234
+#    wg_pubkey: "base64-public-key-from-the-peer="
+#    wg_endpoint: "peer.example.net:23420"   # host:port they listen on; omit if they dial you
+#    peer_ll: "fe80::1234"      # their link-local on the tunnel
+#    listen_port: 21234         # default: 20000 + last four digits of their ASN
+#    latency: 2                 # 64511:1-9   measured RTT bracket
+#    bandwidth: 24              # 64511:21-25 (24 = >=100 Mbit)
+#    crypto: 34                 # 64511:34   WireGuard
+#    bfd: false                 # only if the peer runs BFD too

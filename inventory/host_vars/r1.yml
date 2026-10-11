@@ -1,0 +1,17 @@
+# R1 — home PoP, Adelaide, AU (residential, public IP, no CGNAT)
+router_id: 1
+location: Adelaide, AU
+provider: Home
+provider_region: home
+public_interface: ens18        # TODO: check with `ip -br link`
+public_ipv4: ""                # dynamic — R1 always dials out, so peers need no endpoint for it
+wg_endpoint: ""                # set to a DDNS name (e.g. home.example.net) if you have one
+wg_mtu: 1412                   # lower if your NBN service uses PPPoE; 1420 on plain IPoE
+
+community_region: 53           # Pacific & Oceania
+community_country: 1036        # Australia
+
+# Keep worldwide dn42 transit off the home line: other PoPs look shorter.
+ebgp_export_prepend: 2
+
+ebgp_peers: []

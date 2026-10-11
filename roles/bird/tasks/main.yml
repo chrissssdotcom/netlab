@@ -1,0 +1,54 @@
+- name: BIRD config/ROA directory
+  ansible.builtin.file:
+    path: "{{ bird_roa_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: ROA updater script
+  ansible.builtin.template:
+    src: dn42-roa-update.j2
+    dest: /usr/local/sbin/dn42-roa-update
+    mode: "0755"
+
+- name: ROA updater systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop: [dn42-roa.service, dn42-roa.timer]
+
+- name: Seed empty ROA files so BIRD can start before the first download
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ bird_roa_dir }}/{{ item }}"
+    force: false
+    mode: "0644"
+  loop: [roa_dn42.conf, roa_dn42_v6.conf]
+  register: roa_seed
+
+- name: First ROA download
+  ansible.builtin.command: /usr/local/sbin/dn42-roa-update --no-reload
+  when: roa_seed is changed
+  changed_when: true
+
+- name: BIRD config (parsed by bird -p before it is installed)
+  ansible.builtin.template:
+    src: bird.conf.j2
+    dest: "{{ bird_config_path }}"
+    mode: "0640"
+    group: bird
+    validate: bird -p -c %s
+  notify: Reconfigure BIRD
+
+- name: BIRD enabled and running
+  ansible.builtin.systemd_service:
+    name: bird
+    enabled: true
+    state: started
+
+- name: ROA refresh every 15 minutes
+  ansible.builtin.systemd_service:
+    name: dn42-roa.timer
+    enabled: true
+    state: started
+    daemon_reload: true

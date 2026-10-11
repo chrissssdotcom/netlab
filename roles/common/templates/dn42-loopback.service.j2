@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+[Unit]
+Description=dn42 loopback (dummy) interface for {{ inventory_hostname }}
+After=network-pre.target
+Before=network.target bird.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/usr/sbin/ip link add dn42 type dummy
+ExecStart=/usr/sbin/ip link set dn42 up
+ExecStart=/usr/sbin/ip address replace {{ loopback4 }}/32 dev dn42
+ExecStart=/usr/sbin/ip -6 address replace {{ loopback6 }}/128 dev dn42
+{% for a in loopback_extra4 %}
+ExecStart=/usr/sbin/ip address replace {{ a }} dev dn42
+{% endfor %}
+{% for a in loopback_extra6 %}
+ExecStart=/usr/sbin/ip -6 address replace {{ a }} dev dn42
+{% endfor %}
+ExecStop=/usr/sbin/ip link del dn42
+
+[Install]
+WantedBy=multi-user.target

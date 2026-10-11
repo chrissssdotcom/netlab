@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Refresh dn42 ROA tables every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

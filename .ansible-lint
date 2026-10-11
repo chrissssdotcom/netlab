@@ -1,0 +1,7 @@
+# Variables are shared across roles on purpose (one network, one set of facts).
+skip_list:
+  - var-naming[no-role-prefix]
+  - no-handler      # "when: X is changed" is deliberate where ordering matters
+exclude_paths:
+  - build/
+  - tests/

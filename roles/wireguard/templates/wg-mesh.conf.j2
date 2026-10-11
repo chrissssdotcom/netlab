@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# Mesh link {{ inventory_hostname }} ({{ location }}) <-> {{ item }} ({{ hostvars[item].location }})
+{% set peer_id = hostvars[item].router_id | int %}
+{% set ep = hostvars[item].wg_endpoint | default('') %}
+[Interface]
+ListenPort = {{ mesh_port_base + peer_id }}
+Address = fe80::{{ '%x' | format(router_id | int) }}/64
+MTU = {{ [wg_mtu | int, hostvars[item].wg_mtu | default(wg_mtu) | int] | min }}
+Table = off
+PostUp = wg set %i private-key /etc/wireguard/node.key
+
+[Peer]
+PublicKey = {{ lookup('ansible.builtin.file', pubkey_dir ~ '/' ~ item ~ '.pub') }}
+AllowedIPs = 0.0.0.0/0, ::/0
+{% if ep %}
+Endpoint = {{ ('[' ~ ep ~ ']') if ':' in ep else ep }}:{{ mesh_port_base + (router_id | int) }}
+{% endif %}
+PersistentKeepalive = {{ wg_keepalive }}

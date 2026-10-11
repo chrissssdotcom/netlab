@@ -1,0 +1,60 @@
+# Render every PoP's configs locally (no SSH) so they can be parsed by the real
+# tools:   tests/run.sh
+- name: Render configs for all PoPs
+  hosts: dn42_routers
+  connection: local
+  gather_facts: false
+  vars:
+    out: "{{ playbook_dir }}/../build/{{ inventory_hostname }}"
+  tasks:
+    - name: Output directory
+      ansible.builtin.file:
+        path: "{{ out }}/wireguard"
+        state: directory
+        mode: "0755"
+
+    - name: bird.conf
+      ansible.builtin.template:
+        src: ../roles/bird/templates/bird.conf.j2
+        dest: "{{ out }}/bird.conf"
+        mode: "0644"
+
+    - name: nftables
+      ansible.builtin.template:
+        src: ../roles/firewall/templates/dn42.nft.j2
+        dest: "{{ out }}/dn42.nft"
+        mode: "0644"
+
+    - name: sysctl + loopback unit + ROA script
+      ansible.builtin.template:
+        src: "../roles/{{ item.role }}/templates/{{ item.src }}"
+        dest: "{{ out }}/{{ item.src | regex_replace('\\.j2$', '') }}"
+        mode: "0644"
+      loop:
+        - { role: common, src: 90-dn42.conf.j2 }
+        - { role: common, src: dn42-loopback.service.j2 }
+        - { role: bird, src: dn42-roa-update.j2 }
+
+    - name: Mesh tunnels
+      ansible.builtin.template:
+        src: ../roles/wireguard/templates/wg-mesh.conf.j2
+        dest: "{{ out }}/wireguard/wg-r{{ hostvars[item].router_id }}.conf"
+        mode: "0644"
+      loop: "{{ mesh_peers }}"
+
+    - name: External tunnels
+      ansible.builtin.template:
+        src: ../roles/wireguard/templates/wg-ext.conf.j2
+        dest: "{{ out }}/wireguard/dn42-{{ item.name }}.conf"
+        mode: "0644"
+      loop: "{{ ebgp_peers }}"
+
+    - name: wg_wanted expression used by the role
+      ansible.builtin.set_fact:
+        wg_wanted: >-
+          {{ (mesh_peers | map('extract', hostvars, 'router_id') | map('regex_replace', '^', 'wg-r') | list)
+             + (ebgp_peers | map(attribute='name') | map('regex_replace', '^', 'dn42-') | list) }}
+
+    - name: Show tunnels per PoP
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: loopback {{ loopback4 }} / {{ loopback6 }}, block {{ pop_prefix6 }}, tunnels {{ wg_wanted | join(' ') }}"

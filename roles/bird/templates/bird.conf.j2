@@ -1,0 +1,323 @@
+# {{ ansible_managed }}
+# BIRD 2 — {{ inventory_hostname }}, {{ location }} ({{ provider }} {{ provider_region }})
+# AS{{ dn42_asn }}: OSPFv3+BFD carries loopbacks, full iBGP mesh, eBGP to dn42 with ROA.
+
+################################################################################
+# Identity
+################################################################################
+define OWNAS         = {{ dn42_asn }};
+define OWNIP         = {{ loopback4 }};
+define OWNIPv6       = {{ loopback6 }};
+define OWNNETSET     = [ {{ dn42_aggregates4 | map('regex_replace', '$', '+') | join(', ') }} ];
+define OWNNETSETv6   = [ {{ dn42_aggregates6 | map('regex_replace', '$', '+') | join(', ') }} ];
+define LOOPBACKSv6   = [ {{ dn42_loopback_net6 }}{128,128} ];
+define DN42_REGION   = {{ community_region }};
+define DN42_COUNTRY  = {{ community_country }};
+
+router id OWNIP;
+log syslog { info, remote, warning, error, auth, fatal, bug };
+timeformat protocol iso long;
+
+################################################################################
+# Helpers
+################################################################################
+function is_self_net() -> bool {
+	if net.type = NET_IP4 then return net ~ OWNNETSET;
+	if net.type = NET_IP6 then return net ~ OWNNETSETv6;
+	return false;
+}
+
+function is_valid_network() -> bool {
+	if net.type = NET_IP4 then return net ~ [
+		172.20.0.0/14{21,29},   # dn42
+		172.20.0.0/24{28,32},   # dn42 anycast
+		172.21.0.0/24{28,32},   # dn42 anycast
+		172.22.0.0/24{28,32},   # dn42 anycast
+		172.23.0.0/24{28,32},   # dn42 anycast
+		172.31.0.0/16+,         # ChaosVPN
+		10.100.0.0/14+,         # ChaosVPN
+		10.127.0.0/16+,         # neonetwork
+		10.0.0.0/8{15,24}       # Freifunk.net
+	];
+	if net.type = NET_IP6 then return net ~ [ fd00::/8{44,64} ];
+	return false;
+}
+
+function is_loopback6() -> bool {
+	if net.type = NET_IP6 then return net ~ LOOPBACKSv6;
+	return false;
+}
+
+roa4 table dn42_roa;
+roa6 table dn42_roa_v6;
+
+function is_roa_valid() -> bool {
+	if net.type = NET_IP4 then return roa_check(dn42_roa, net, bgp_path.last) = ROA_VALID;
+	return roa_check(dn42_roa_v6, net, bgp_path.last) = ROA_VALID;
+}
+
+################################################################################
+# dn42 link communities (64511:x) — latency max(), bandwidth min(), crypto min()
+################################################################################
+function update_latency(int link_latency) -> int {
+	bgp_community.add((64511, link_latency));
+	     if (64511, 9) ~ bgp_community then { bgp_community.delete([(64511, 1..8)]); return 9; }
+	else if (64511, 8) ~ bgp_community then { bgp_community.delete([(64511, 1..7)]); return 8; }
+	else if (64511, 7) ~ bgp_community then { bgp_community.delete([(64511, 1..6)]); return 7; }
+	else if (64511, 6) ~ bgp_community then { bgp_community.delete([(64511, 1..5)]); return 6; }
+	else if (64511, 5) ~ bgp_community then { bgp_community.delete([(64511, 1..4)]); return 5; }
+	else if (64511, 4) ~ bgp_community then { bgp_community.delete([(64511, 1..3)]); return 4; }
+	else if (64511, 3) ~ bgp_community then { bgp_community.delete([(64511, 1..2)]); return 3; }
+	else if (64511, 2) ~ bgp_community then { bgp_community.delete([(64511, 1..1)]); return 2; }
+	else return 1;
+}
+
+function update_bandwidth(int link_bandwidth) -> int {
+	bgp_community.add((64511, link_bandwidth));
+	     if (64511, 21) ~ bgp_community then { bgp_community.delete([(64511, 22..29)]); return 21; }
+	else if (64511, 22) ~ bgp_community then { bgp_community.delete([(64511, 23..29)]); return 22; }
+	else if (64511, 23) ~ bgp_community then { bgp_community.delete([(64511, 24..29)]); return 23; }
+	else if (64511, 24) ~ bgp_community then { bgp_community.delete([(64511, 25..29)]); return 24; }
+	else if (64511, 25) ~ bgp_community then { bgp_community.delete([(64511, 26..29)]); return 25; }
+	else return 29;
+}
+
+function update_crypto(int link_crypto) -> int {
+	bgp_community.add((64511, link_crypto));
+	     if (64511, 31) ~ bgp_community then { bgp_community.delete([(64511, 32..39)]); return 31; }
+	else if (64511, 32) ~ bgp_community then { bgp_community.delete([(64511, 33..39)]); return 32; }
+	else if (64511, 33) ~ bgp_community then { bgp_community.delete([(64511, 34..39)]); return 33; }
+	else if (64511, 34) ~ bgp_community then { bgp_community.delete([(64511, 35..39)]); return 34; }
+	else return 31;
+}
+
+function update_flags(int link_latency; int link_bandwidth; int link_crypto) -> bool
+int dn42_latency;
+int dn42_bandwidth;
+int dn42_crypto;
+{
+	dn42_latency = update_latency(link_latency);
+	dn42_bandwidth = update_bandwidth(link_bandwidth);
+	dn42_crypto = update_crypto(link_crypto);
+	return true;
+}
+
+################################################################################
+# Policy
+################################################################################
+# From external dn42 peers: valid dn42 space, never our own, ROA-valid, sane paths.
+function dn42_import_filter(int link_latency; int link_bandwidth; int link_crypto) {
+	if !is_valid_network() then reject;
+	if is_self_net() then reject;
+	if !is_roa_valid() then reject;
+	if bgp_path.len > {{ bgp_max_path_len }} then reject;
+	update_flags(link_latency, link_bandwidth, link_crypto);
+	accept;
+}
+
+# To external dn42 peers: our aggregates (tagged with this PoP's region/country)
+# plus dn42 routes we learned by BGP. Internal more-specifics never leave the AS.
+function dn42_export_filter(int link_latency; int link_bandwidth; int link_crypto) {
+	if !is_valid_network() then reject;
+	if is_self_net() then {
+		if !(proto ~ "static_agg*") then reject;
+		bgp_community.add((64511, DN42_REGION));
+		bgp_community.add((64511, DN42_COUNTRY));
+	} else {
+		if source != RTS_BGP then reject;
+	}
+	update_flags(link_latency, link_bandwidth, link_crypto);
+{% for _ in range(ebgp_export_prepend | int) %}
+	bgp_path.prepend(OWNAS);
+{% endfor %}
+	accept;
+}
+
+# iBGP: carry eBGP-learned routes, this PoP's /52, v4 loopback and service routes.
+function ibgp_import() -> bool {
+	if is_self_net() then return true;
+	return is_valid_network();
+}
+
+function ibgp_export() -> bool {
+	if proto ~ "static_agg*" then return false;   # every PoP originates these itself
+	if is_loopback6() then return false;          # OSPFv3 carries v6 loopbacks
+	if source = RTS_BGP then return true;
+	return is_self_net();
+}
+
+################################################################################
+# Kernel, interfaces, origination
+################################################################################
+protocol device {
+	scan time 10;
+}
+
+protocol direct {
+	ipv4;
+	ipv6;
+	interface "dn42";
+}
+
+protocol kernel kernel4 {
+	scan time 20;
+	ipv4 {
+		import none;
+		export filter {
+			if source = RTS_DEVICE then reject;
+			if source = RTS_BGP then krt_prefsrc = OWNIP;
+			accept;
+		};
+	};
+}
+
+protocol kernel kernel6 {
+	scan time 20;
+	ipv6 {
+		import none;
+		export filter {
+			if source = RTS_DEVICE then reject;
+			if source = RTS_BGP || source = RTS_OSPF then krt_prefsrc = OWNIPv6;
+			accept;
+		};
+	};
+}
+
+# Aggregates — announced to dn42 from every PoP, unreachable locally so unused
+# space is dropped here instead of following a default route.
+protocol static static_agg4 {
+	ipv4;
+{% for p in dn42_aggregates4 %}
+	route {{ p }} unreachable;
+{% endfor %}
+}
+
+protocol static static_agg6 {
+	ipv6;
+{% for p in dn42_aggregates6 %}
+	route {{ p }} unreachable;
+{% endfor %}
+}
+
+# This PoP's own block — carried in iBGP so other PoPs send its traffic here.
+protocol static static_pop6 {
+	ipv6;
+	route {{ pop_prefix6 }} unreachable;
+}
+{% if pop_prefixes4 %}
+
+protocol static static_pop4 {
+	ipv4;
+{% for p in pop_prefixes4 %}
+	route {{ p }} unreachable;
+{% endfor %}
+}
+{% endif %}
+
+protocol static roa_dn42_v4 {
+	roa4 { table dn42_roa; };
+	include "{{ bird_roa_dir }}/roa_dn42.conf";
+}
+
+protocol static roa_dn42_v6 {
+	roa6 { table dn42_roa_v6; };
+	include "{{ bird_roa_dir }}/roa_dn42_v6.conf";
+}
+
+################################################################################
+# IGP — OSPFv3 over the WireGuard mesh, BFD for fast failure detection
+################################################################################
+protocol bfd {
+	interface "wg-r*" {
+		interval {{ bfd_interval_ms }} ms;
+		multiplier {{ bfd_multiplier }};
+	};
+}
+
+protocol ospf v3 ospf_mesh {
+	ipv6 {
+		import where is_loopback6();
+		export none;
+	};
+	area 0 {
+		interface "dn42" {
+			stub yes;
+		};
+{% for peer in mesh_peers %}
+		interface "wg-r{{ hostvars[peer].router_id }}" {   # {{ peer }} — {{ hostvars[peer].location }}
+			type ptp;
+			cost {{ mesh_costs[peer] | default(mesh_default_cost) }};
+			hello 5;
+			dead count 4;
+			bfd yes;
+		};
+{% endfor %}
+	};
+}
+
+################################################################################
+# iBGP — full mesh between loopbacks, both families on one session
+################################################################################
+template bgp ibgp_mesh {
+	local OWNIPv6 as OWNAS;
+	multihop;
+	graceful restart on;
+	ipv4 {
+		next hop self;
+		extended next hop on;      # IPv4 routes with IPv6 next hops (RFC 8950)
+		igp table master6;         # resolve those next hops via OSPFv3
+		import where ibgp_import();
+		export where ibgp_export();
+	};
+	ipv6 {
+		next hop self;
+		import where ibgp_import();
+		export where ibgp_export();
+	};
+}
+
+{% for peer in mesh_peers %}
+protocol bgp ibgp_r{{ hostvars[peer].router_id }} from ibgp_mesh {
+	description "{{ peer }} — {{ hostvars[peer].location }}";
+	neighbor {{ hostvars[peer].loopback6 }} as OWNAS;
+}
+
+{% endfor %}
+################################################################################
+# eBGP — external dn42 peers over link-local, MP-BGP with extended next hop
+################################################################################
+template bgp dnpeers {
+	local as OWNAS;
+	path metric 1;
+	enforce first as on;
+	graceful restart on;
+	ipv4 {
+		extended next hop on;
+		import limit {{ bgp_import_limit }} action block;
+		import table on;
+	};
+	ipv6 {
+		import limit {{ bgp_import_limit }} action block;
+		import table on;
+	};
+}
+
+{% for p in ebgp_peers %}
+{% set f = (p.latency | default(4)) ~ ', ' ~ (p.bandwidth | default(24)) ~ ', ' ~ (p.crypto | default(34)) %}
+protocol bgp ebgp_{{ p.name }} from dnpeers {
+	description "AS{{ p.asn }} {{ p.description | default(p.name) }}";
+	neighbor {{ p.peer_ll }}%'dn42-{{ p.name }}' as {{ p.asn }};
+{% if p.bfd | default(false) %}
+	bfd on;
+{% endif %}
+	ipv4 {
+		import where dn42_import_filter({{ f }});
+		export where dn42_export_filter({{ f }});
+	};
+	ipv6 {
+		import where dn42_import_filter({{ f }});
+		export where dn42_export_filter({{ f }});
+	};
+}
+
+{% endfor %}

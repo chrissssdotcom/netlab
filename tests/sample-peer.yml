@@ -1,0 +1,11 @@
+# Test-only: give every PoP one external peer so the eBGP path is rendered and parsed.
+ebgp_peers:
+  - name: testpeer
+    asn: 4242421080
+    wg_pubkey: "dGVzdHRlc3R0ZXN0dGVzdHRlc3R0ZXN0dGVzdHRlc3Q="
+    wg_endpoint: "peer.example.net:23420"
+    peer_ll: "fe80::1080"
+    latency: 3
+    bandwidth: 24
+    crypto: 34
+    bfd: true

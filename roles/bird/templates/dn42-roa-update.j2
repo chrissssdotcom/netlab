@@ -1,0 +1,35 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Refresh dn42 ROA tables for BIRD. A download is only swapped in if it looks
+# complete, so a broken fetch can never empty the tables and drop every route.
+set -uo pipefail
+
+dir="{{ bird_roa_dir }}"
+min={{ roa_min_entries }}
+changed=0
+
+fetch() {
+	local url=$1 out=$2 tmp n
+	tmp=$(mktemp "$out.XXXXXX") || return 1
+	if ! curl -fsSL --max-time 60 -o "$tmp" "$url"; then
+		echo "dn42-roa: download failed: $url" >&2; rm -f "$tmp"; return 1
+	fi
+	n=$(grep -c '^route ' "$tmp" || true)
+	if (( n < min )); then
+		echo "dn42-roa: only $n entries in $url, keeping the old file" >&2; rm -f "$tmp"; return 1
+	fi
+	if cmp -s "$tmp" "$out"; then rm -f "$tmp"; return 0; fi
+	chmod 0644 "$tmp" && mv -f "$tmp" "$out" && changed=1
+	echo "dn42-roa: $out updated ($n entries)"
+}
+
+rc=0
+fetch "{{ roa_url_v4 }}" "$dir/roa_dn42.conf" || rc=1
+fetch "{{ roa_url_v6 }}" "$dir/roa_dn42_v6.conf" || rc=1
+
+if (( changed )) && [[ "${1:-}" != "--no-reload" ]] && birdc show status >/dev/null 2>&1; then
+	birdc configure >/dev/null
+	# re-run eBGP import filters against the new ROAs (from the stored import table)
+	birdc 'reload in "ebgp_*"' >/dev/null 2>&1 || true
+fi
+exit $rc
