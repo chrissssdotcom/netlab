@@ -54,6 +54,11 @@ table inet dn42 {
 		tcp dport 22 ct state new limit rate 30/minute accept
 {% endif %}
 
+{% if vpc_enabled | bool %}
+		# DHCP replies on the provider VPC NIC
+		iifname "{{ vpc_iface }}" udp sport 67 udp dport 68 accept
+
+{% endif %}
 		# Routing protocols only ever arrive inside tunnels
 		iifname "wg-r*" tcp dport 179 accept
 		iifname "dn42-*" tcp dport 179 accept
@@ -99,6 +104,16 @@ table inet dn42 {
 		iifname "wg-r*" oifname "dn42*" accept
 		iifname "dn42*" oifname "wg-r*" accept
 		iifname "dn42*" oifname "dn42*" accept
+{% if vpc_enabled | bool %}
+
+		# Hosts behind the provider VPC: only our own dn42 addresses may leave (no private
+		# VPC addresses, nothing spoofed), and only towards dn42. Replies come back freely.
+{% for out in ['wg-r*', 'dn42*'] + ([rw_interface] if rw_enabled | bool else []) %}
+		iifname "{{ vpc_iface }}" oifname "{{ out }}" ip saddr { {{ dn42_aggregates4 | join(', ') }} } accept
+		iifname "{{ vpc_iface }}" oifname "{{ out }}" ip6 saddr { {{ dn42_aggregates6 | join(', ') }} } accept
+		iifname "{{ out }}" oifname "{{ vpc_iface }}" accept
+{% endfor %}
+{% endif %}
 {% if rw_enabled | bool %}
 
 		# Road warriors: dn42 only, in both directions. Their source addresses are

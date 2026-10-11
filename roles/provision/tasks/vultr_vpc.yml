@@ -1,0 +1,47 @@
+# Find or create this PoP's VPC 2.0 network at Vultr (they are found by description).
+- name: Look for an existing VPC
+  ansible.builtin.uri:
+    url: "{{ vultr_api_url }}/vpcs?per_page=500"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
+    return_content: true
+  register: vu_vpcs
+  check_mode: false
+  changed_when: false
+  no_log: true
+
+- name: Exactly this description in this region
+  ansible.builtin.set_fact:
+    vu_vpc: >-
+      {{ vu_vpcs.json.vpcs
+         | selectattr('description', 'equalto', vpc_label)
+         | selectattr('region', 'equalto', provider_region)
+         | list | first | default({}) }}
+
+- name: Create the VPC
+  ansible.builtin.uri:
+    url: "{{ vultr_api_url }}/vpcs"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
+    body_format: json
+    body:
+      region: "{{ provider_region }}"
+      description: "{{ vpc_label }}"
+      v4_subnet: "{{ vpc_subnet4.split('/')[0] }}"
+      v4_subnet_mask: "{{ vpc_subnet4.split('/')[1] | int }}"
+    status_code: [200, 201, 202]
+    return_content: true
+  register: vu_vpc_new
+  when: vu_vpc | length == 0 and not ansible_check_mode
+  no_log: true
+
+- name: Would create (check mode)
+  ansible.builtin.debug:
+    msg: "would create Vultr VPC {{ vpc_label }} ({{ vpc_subnet4 }}) in {{ provider_region }}"
+  when: vu_vpc | length == 0 and ansible_check_mode
+
+- name: VPC to attach
+  ansible.builtin.set_fact:
+    vu_vpc_id: "{{ (vu_vpc if vu_vpc | length > 0 else vu_vpc_new.json.vpc).id }}"
+  when: not ansible_check_mode

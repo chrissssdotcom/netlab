@@ -1,0 +1,45 @@
+# Find or create this PoP's VPC at Linode and work out the interfaces for the new server.
+- name: Look for an existing VPC
+  ansible.builtin.uri:
+    url: "{{ linode_api_url }}/vpcs?page_size=500"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'LINODE_TOKEN') }}"
+    return_content: true
+  register: ln_vpcs
+  check_mode: false
+  changed_when: false
+  no_log: true
+
+- name: Exactly this label
+  ansible.builtin.set_fact:
+    ln_vpc: "{{ ln_vpcs.json.data | selectattr('label', 'equalto', vpc_label) | list | first | default({}) }}"
+
+- name: Create the VPC
+  ansible.builtin.uri:
+    url: "{{ linode_api_url }}/vpcs"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'LINODE_TOKEN') }}"
+    body_format: json
+    body:
+      label: "{{ vpc_label }}"
+      description: "dn42 {{ inventory_hostname }} services (managed by Ansible)"
+      region: "{{ provider_region }}"
+      subnets:
+        - label: services
+          ipv4: "{{ vpc_subnet4 }}"
+    status_code: [200, 201]
+    return_content: true
+  register: ln_vpc_new
+  when: ln_vpc | length == 0 and not ansible_check_mode
+  no_log: true
+
+- name: Would create (check mode)
+  ansible.builtin.debug:
+    msg: "would create Linode VPC {{ vpc_label }} ({{ vpc_subnet4 }}) in {{ provider_region }}"
+  when: ln_vpc | length == 0 and ansible_check_mode
+
+- name: Subnet to attach
+  ansible.builtin.set_fact:
+    ln_vpc_subnet_id: "{{ ((ln_vpc if ln_vpc | length > 0 else ln_vpc_new.json).subnets | first).id }}"
+  when: not ansible_check_mode

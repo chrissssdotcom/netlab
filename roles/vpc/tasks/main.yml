@@ -1,0 +1,47 @@
+# The provider VPC arrives as a second NIC. Bring it up (DHCP for the provider's
+# private address, never a default route) and give it the router's dn42 address(es)
+# so hosts behind it can use this router as their gateway.
+- name: VPC enabled
+  when: vpc_enabled | bool
+  block:
+    - name: Work out which NIC is the VPC
+      ansible.builtin.set_fact:
+        vpc_candidates: >-
+          {{ ansible_facts['interfaces']
+             | reject('match', '^(lo|wg-|dn42|rw|virbr|docker|veth|br-)')
+             | reject('equalto', public_interface) | list }}
+
+    - name: Exactly one candidate, or vpc_interface says which
+      ansible.builtin.assert:
+        that: (vpc_interface | length > 0) or (vpc_candidates | length == 1)
+        fail_msg: >-
+          Found {{ vpc_candidates | length }} candidate NICs ({{ vpc_candidates | join(', ') }}).
+          A VPC is attached when the server is created, so an existing server needs it attached
+          in the provider console first. Set vpc_interface in host_vars if there is more than one.
+        quiet: true
+
+    - name: Use that NIC
+      ansible.builtin.set_fact:
+        vpc_iface: "{{ vpc_interface if vpc_interface | length > 0 else vpc_candidates | first }}"
+
+    - name: Preflight — the dn42 subnets are ours
+      ansible.builtin.assert:
+        that:
+          - vpc_dn42_net6 is match(dn42_prefix6)
+          - (vpc_dn42_net4 | length == 0) or (vpc_dn42_net4 is match('^[0-9.]+/(2[4-9]|30)$'))
+          - (vpc_dn42_net4 | length == 0) or (vpc_dn42_net4 != rw_pool4)
+        quiet: true
+
+    - name: NetworkManager profile for the VPC NIC
+      ansible.builtin.template:
+        src: dn42-vpc.nmconnection.j2
+        dest: /etc/NetworkManager/system-connections/dn42-vpc.nmconnection
+        mode: "0600"
+      notify: Activate VPC connection
+
+- name: VPC disabled — remove our profile if an earlier run created it
+  ansible.builtin.file:
+    path: /etc/NetworkManager/system-connections/dn42-vpc.nmconnection
+    state: absent
+  when: not (vpc_enabled | bool)
+  notify: Reload NetworkManager connections

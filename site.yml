@@ -5,6 +5,7 @@
   become: true
   roles:
     - common      # preflight checks, packages, sysctl, loopback, SSH, updates
+    - vpc         # provider VPC NIC and its dn42 gateway addresses (opt-in)
     - firewall    # nftables: default-deny in, dn42-only forwarding
     - wireguard   # node key, full mesh + external peering tunnels
     - bird        # OSPFv3 + BFD, iBGP mesh, eBGP, ROA

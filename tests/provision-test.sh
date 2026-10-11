@@ -44,4 +44,18 @@ if ansible-playbook provision.yml -e provision_create=false -e linode_api_url=ht
 else echo "ok   lookup-only mode fails when a server is missing"; fi
 ok "lookup-only mode created nothing" "$(stat creates)" 4
 
+# VPCs: opt-in, created per PoP, attached to newly created servers only.
+# The mock is fresh for this block because the servers above already exist.
+kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
+python3 tests/mock_provider_api.py $port & mock=$!
+for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
+ansible-playbook provision.yml --check -e vpc_enabled=true "${args[@]}" >/dev/null
+ok "VPC --check creates nothing" "$(stat vpcs)" 0
+ansible-playbook provision.yml -e vpc_enabled=true "${args[@]}" >/dev/null
+ok "VPC run creates one VPC per cloud PoP" "$(stat vpcs)" 4
+ok "every new server is attached to its VPC" "$(stat attached)" 4
+ansible-playbook provision.yml -e vpc_enabled=true "${args[@]}" >/dev/null
+ok "VPC re-run creates nothing more" "$(stat vpcs)" 4
+ok "VPC re-run creates no new server" "$(stat creates)" 4
+
 exit $fail

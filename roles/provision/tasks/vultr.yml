@@ -18,6 +18,15 @@
     msg: "{{ provision_label }} does not exist at Vultr and provision_create is false"
   when: vu_inst | length == 0 and not (provision_create | bool)
 
+- name: VPC for this PoP
+  ansible.builtin.include_tasks: vultr_vpc.yml
+  when: vpc_enabled | bool and provision_create | bool
+
+- name: Existing server — a VPC is only attached when a server is created
+  ansible.builtin.debug:
+    msg: "{{ provision_label }} already exists; attach the VPC to it in the Vultr console (not automated)"
+  when: vpc_enabled | bool and vu_inst | length > 0
+
 - name: Creating a new instance
   when: vu_inst | length == 0
   block:
@@ -34,7 +43,11 @@
         headers:
           Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
         body_format: json
-        body:
+        body: "{{ vu_body | combine(vu_vpc_body) }}"
+        status_code: [200, 201, 202]
+        return_content: true
+      vars:
+        vu_body:
           label: "{{ provision_label }}"
           hostname: "{{ provision_label }}"
           region: "{{ provider_region }}"
@@ -45,8 +58,7 @@
           backups: disabled
           activation_email: false
           tags: "{{ provision_tags }}"
-        status_code: [200, 201, 202]
-        return_content: true
+        vu_vpc_body: "{{ {'attach_vpc': [vu_vpc_id]} if (vpc_enabled | bool and vu_vpc_id is defined) else {} }}"
       register: vu_created
       when: not ansible_check_mode
       no_log: true

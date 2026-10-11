@@ -55,6 +55,13 @@ want build/r4/wireguard/rw0.conf '^AllowedIPs = fdcd:f79a:c76b:4f00::6/128$'
 want build/r2/clients/laptop.conf '^Address = 172\.22\.169\.50/32, fdcd:f79a:c76b:2f00::2/128$'
 want build/r2/dn42.nft '"rw0" oifname "wg-r\*" accept'
 want build/r2/bird.conf '^	route 172\.22\.169\.48/29 unreachable;'
+want build/r2/dn42.nft 'iifname "ens7" oifname "wg-r\*" ip saddr \{ 172\.22\.169\.32/27, 172\.22\.101\.192/29 \} accept'
+want build/r2/dn42.nft 'iifname "ens7" oifname "dn42\*" ip6 saddr \{ fdcd:f79a:c76b::/48 \} accept'
+want build/r2/dn42.nft 'iifname "ens7" udp sport 67 udp dport 68 accept'
+want build/r2/dn42-vpc.nmconnection '^address1=fdcd:f79a:c76b:2001::1/64$'
+want build/r2/dn42-vpc.nmconnection '^address1=172\.22\.169\.61/30$'
+want build/r2/dn42-vpc.nmconnection '^never-default=true$'
+want build/r2/bird.conf '^	route 172\.22\.169\.60/30 unreachable;'
 ! grep -q 'rw0' build/r1/wireguard/wg-r2.conf || { echo "RW leaked into a mesh tunnel"; fail=1; }
 [ ! -e build/r1/clients/tablet.conf ] || { echo "client pinned to r3 rendered on r1"; fail=1; }
 echo "road warrior checks done"

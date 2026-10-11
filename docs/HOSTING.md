@@ -64,6 +64,31 @@ a `/64` from the PoP's `/52` on a bridge and let the router route to it:
 The home PoP (r1) is the natural place for this: the "bridge" is your LAN, so
 real servers on the LAN become reachable from all of dn42.
 
+### Provider VPC behind a router
+
+`vpc_enabled: true` (per PoP, in `host_vars`) automates the plumbing:
+
+| Where | What happens |
+|---|---|
+| `provision.yml` | creates the PoP's VPC (`dn42-<host>`, private `10.200+id.0.0/24`) and attaches it as a second NIC when the server is created |
+| `site.yml` (`vpc` role) | finds that NIC (or use `vpc_interface`), brings it up with DHCP and **no default route**, and gives it the router's dn42 addresses: `<N>001::1/64` and optionally `vpc_dn42_net4` |
+| firewall | forwards between the VPC NIC and dn42/road warriors, but only for packets whose **source is your own dn42 space**; private VPC addresses and anything spoofed are never forwarded. VPC hosts cannot reach the public Internet through the router |
+| BIRD | announces `vpc_dn42_net4` via iBGP; the IPv6 `/64` is inside the `/52` that is already announced |
+
+Hosts in the VPC then need, on the VPC NIC: an address from `<N>001::/64` (and/or
+the IPv4 subnet), gateway `<N>001::1`, and routes for `fd00::/8` and
+`172.20.0.0/14` via the router.
+
+**Verify before building on it.** Providers' VPCs are private IPv4 networks that may
+drop packets whose addresses they did not assign. Test with one VM: add a dn42
+address to it and ping the router's `<N>001::1` and a remote PoP. If that fails, use
+Pattern A or a WireGuard overlay instead. The provider VPCs themselves carry no
+IPv6 (Linode's is in limited availability), so IPv6 only works if that test passes.
+
+**Limits.** VPCs attach at creation; changing `vpc_enabled` for an existing server
+means rebuilding it. Deleting a VPC (or the server) stays a manual step in the
+provider console.
+
 **Containers**: the ruleset starts with `flush ruleset`, which also deletes the NAT
 tables Docker and podman create, breaking their networking on the next nftables
 reload. Run containers with host networking bound to the service address, or give

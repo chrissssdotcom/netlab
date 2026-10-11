@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# {{ inventory_hostname }}: provider VPC NIC. DHCP gives the private address; the
+# default route stays on the public NIC; the dn42 addresses make this router the
+# gateway for dn42 traffic of the hosts behind it.
+[connection]
+id=dn42-vpc
+type=ethernet
+interface-name={{ vpc_iface }}
+autoconnect=true
+
+[ethernet]
+
+[ipv4]
+method=auto
+never-default=true
+ignore-auto-dns=true
+{% if vpc_dn42_net4 %}
+address1={{ vpc_gw4 }}/{{ vpc_dn42_net4.split('/')[1] }}
+{% endif %}
+
+[ipv6]
+method=manual
+address1={{ vpc_dn42_net6 | regex_replace('::/64$', '::1/64') }}
+never-default=true

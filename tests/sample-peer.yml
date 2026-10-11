@@ -17,3 +17,8 @@ rw_clients:
   - { name: laptop,  id: 2, wg_pubkey: "ZmFrZWZha2VmYWtlZmFrZWZha2VmYWtlZmFrZWZha2U=" }
   - { name: phone,   id: 6, wg_pubkey: "ZmFrZTJmYWtlMmZha2UyZmFrZTJmYWtlMmZha2UyZmE=", pops: [r2, r4] }
   - { name: tablet,  id: 3, wg_pubkey: "ZmFrZTNmYWtlM2Zha2UzZmFrZTNmYWtlM2Zha2UzZmE=", pops: [r3] }
+
+# VPC behind each router (render-only: the NIC name and subnet are made up)
+vpc_enabled: true
+vpc_interface: ens7
+vpc_dn42_net4: 172.22.169.60/30

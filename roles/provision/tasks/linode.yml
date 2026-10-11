@@ -19,6 +19,15 @@
     msg: "{{ provision_label }} does not exist at Linode and provision_create is false"
   when: ln_inst | length == 0 and not (provision_create | bool)
 
+- name: VPC for this PoP
+  ansible.builtin.include_tasks: linode_vpc.yml
+  when: vpc_enabled | bool and provision_create | bool
+
+- name: Existing server — a VPC is only attached when a server is created
+  ansible.builtin.debug:
+    msg: "{{ provision_label }} already exists; attach the VPC to it in the Linode console (not automated)"
+  when: vpc_enabled | bool and ln_inst | length > 0
+
 - name: Create the Linode
   ansible.builtin.uri:
     url: "{{ linode_api_url }}/linode/instances"
@@ -26,7 +35,11 @@
     headers:
       Authorization: "Bearer {{ lookup('ansible.builtin.env', 'LINODE_TOKEN') }}"
     body_format: json
-    body:
+    body: "{{ ln_body | combine(ln_vpc_body) }}"
+    status_code: [200, 201]
+    return_content: true
+  vars:
+    ln_body:
       label: "{{ provision_label }}"
       region: "{{ provider_region }}"
       type: "{{ provision_plan }}"
@@ -37,8 +50,11 @@
       tags: "{{ provision_tags }}"
       booted: true
       backups_enabled: false
-    status_code: [200, 201]
-    return_content: true
+    # eth0 stays the public NIC; the VPC arrives as eth1
+    ln_vpc_body: >-
+      {{ {'interfaces': [{'purpose': 'public', 'primary': true},
+                         {'purpose': 'vpc', 'subnet_id': (ln_vpc_subnet_id | int), 'primary': false}]}
+         if (vpc_enabled | bool and ln_vpc_subnet_id is defined) else {} }}
   register: ln_created
   when: ln_inst | length == 0
   no_log: true

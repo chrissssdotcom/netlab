@@ -83,6 +83,13 @@ ansible-playbook deploy.yml                # create what is missing, then build 
   returns 401. Tokens need read/write on servers (Linode) / the default key (Vultr).
 - A fresh server accepts the provider's generated root password until the first run
   hardens SSH (a few minutes); `deploy.yml` does that straight away.
+- **VPCs (opt-in)**: set `vpc_enabled: true` in a PoP's `host_vars` and `provision.yml`
+  also creates that PoP's VPC (Vultr VPC 2.0 / Linode VPC, private subnet
+  `10.20x.0.0/24`) and attaches it to the server **when the server is created**.
+  Attaching to an existing server is not automated: it is skipped with a notice, so
+  attach it in the console or rebuild the server. `site.yml` then brings the NIC up
+  and lets hosts behind it use the router as their dn42 gateway. See
+  [`docs/HOSTING.md`](docs/HOSTING.md#provider-vpc-behind-a-router).
 - `provision_create: false` (or `-e provision_create=false`) turns it into a lookup
   that fails if a server is missing, which is a safe mode for routine runs.
 

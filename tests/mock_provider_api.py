@@ -13,7 +13,8 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "testtoken"
-state = {"linode": [], "vultr": [], "keys": [], "creates": 0, "unauth": 0, "next_id": 1000}
+state = {"linode": [], "vultr": [], "keys": [], "ln_vpcs": [], "vu_vpcs": [], "attached": 0,
+         "creates": 0, "unauth": 0, "next_id": 1000}
 
 
 def need(body, fields):
@@ -47,7 +48,8 @@ class H(BaseHTTPRequestHandler):
         p = self.path.split("?")[0]
         if p == "/_stats":
             return self.send(200, {"creates": state["creates"], "ssh_keys": len(state["keys"]),
-                                   "unauthorised": state["unauth"],
+                                   "unauthorised": state["unauth"], "vpcs": len(state["ln_vpcs"]) + len(state["vu_vpcs"]),
+                                   "attached": state["attached"],
                                    "servers": [s["label"] for s in state["linode"] + state["vultr"]]})
         if not self.authed():
             return
@@ -60,6 +62,10 @@ class H(BaseHTTPRequestHandler):
             s["polls"] += 1
             s["status"] = "running" if s["polls"] > 2 else "provisioning"
             return self.send(200, s)
+        if p == "/v4/vpcs":
+            return self.send(200, {"data": state["ln_vpcs"], "page": 1, "pages": 1, "results": len(state["ln_vpcs"])})
+        if p == "/v2/vpcs":
+            return self.send(200, {"vpcs": state["vu_vpcs"], "meta": {"total": len(state["vu_vpcs"])}})
         if p == "/v2/ssh-keys":
             return self.send(200, {"ssh_keys": state["keys"], "meta": {"total": len(state["keys"])}})
         if p == "/v2/instances":
@@ -85,12 +91,36 @@ class H(BaseHTTPRequestHandler):
             miss = need(b, ["label", "region", "type", "image", "root_pass", "authorized_keys"])
             if miss or len(b["root_pass"]) < 12:
                 return self.send(400, {"errors": [{"reason": f"missing/invalid {miss or 'root_pass'}"}]})
+            for itf in b.get("interfaces", []):
+                if itf.get("purpose") == "vpc":
+                    sid = itf.get("subnet_id")
+                    if not any(sn["id"] == sid for v in state["ln_vpcs"] for sn in v["subnets"]):
+                        return self.send(400, {"errors": [{"reason": "unknown subnet_id"}]})
+                    state["attached"] += 1
+            if b.get("interfaces") and b["interfaces"][0].get("purpose") != "public":
+                return self.send(400, {"errors": [{"reason": "eth0 must stay public"}]})
             s = {"id": i, "label": b["label"], "region": b["region"], "type": b["type"], "image": b["image"],
                  "tags": b.get("tags", []), "status": "provisioning", "polls": 0,
                  "ipv4": [f"198.51.100.{i % 250}"], "ipv6": "2001:db8::/128"}
             state["linode"].append(s)
             state["creates"] += 1
             return self.send(200, s)
+        if p == "/v4/vpcs":
+            miss = need(b, ["label", "region", "subnets"])
+            if miss or not all(sn.get("ipv4") and sn.get("label") for sn in b["subnets"]):
+                return self.send(400, {"errors": [{"reason": f"missing/invalid {miss or 'subnets'}"}]})
+            v = {"id": i, "label": b["label"], "region": b["region"],
+                 "subnets": [{"id": i + 500 + n, "label": sn["label"], "ipv4": sn["ipv4"]} for n, sn in enumerate(b["subnets"])]}
+            state["ln_vpcs"].append(v)
+            return self.send(200, v)
+        if p == "/v2/vpcs":
+            miss = need(b, ["region", "description", "v4_subnet", "v4_subnet_mask"])
+            if miss or not isinstance(b["v4_subnet_mask"], int):
+                return self.send(400, {"error": f"missing/invalid {miss or 'v4_subnet_mask (integer)'}"})
+            v = {"id": f"vpc-{i}", "region": b["region"], "description": b["description"],
+                 "v4_subnet": b["v4_subnet"], "v4_subnet_mask": b["v4_subnet_mask"]}
+            state["vu_vpcs"].append(v)
+            return self.send(202, {"vpc": v})
         if p == "/v2/ssh-keys":
             miss = need(b, ["name", "ssh_key"])
             if miss:
@@ -104,6 +134,10 @@ class H(BaseHTTPRequestHandler):
                 return self.send(400, {"error": f"missing/invalid {miss or 'os_id (must be an integer)'}"})
             if not all(any(k["id"] == x for k in state["keys"]) for x in b["sshkey_id"]):
                 return self.send(400, {"error": "unknown sshkey_id"})
+            for vid in b.get("attach_vpc", []):
+                if not any(v["id"] == vid for v in state["vu_vpcs"]):
+                    return self.send(400, {"error": "unknown vpc id"})
+                state["attached"] += 1
             s = {"id": f"vu-{i}", "label": b["label"], "region": b["region"], "plan": b["plan"],
                  "os_id": b["os_id"], "status": "pending", "power_status": "stopped",
                  "server_status": "none", "main_ip": "0.0.0.0", "ip": f"192.0.2.{i % 250}", "polls": 0}

@@ -204,7 +204,7 @@ protocol static static_pop6 {
 	ipv6;
 	route {{ pop_prefix6 }} unreachable;
 }
-{% set pop4 = pop_prefixes4 + ([rw_pool4] if (rw_enabled | bool and rw_pool4) else []) %}
+{% set pop4 = pop_prefixes4 + ([rw_pool4] if (rw_enabled | bool and rw_pool4) else []) + ([vpc_dn42_net4] if (vpc_enabled | bool and vpc_dn42_net4) else []) %}
 {% if pop4 %}
 
 protocol static static_pop4 {

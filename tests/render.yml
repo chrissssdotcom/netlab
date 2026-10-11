@@ -50,6 +50,13 @@
         mode: "0644"
       loop: "{{ ebgp_peers }}"
 
+    - name: VPC NIC profile
+      ansible.builtin.template:
+        src: ../roles/vpc/templates/dn42-vpc.nmconnection.j2
+        dest: "{{ out }}/dn42-vpc.nmconnection"
+        mode: "0644"
+      when: vpc_enabled | bool
+
     - name: Road warrior tunnel
       ansible.builtin.template:
         src: ../roles/wireguard/templates/wg-rw.conf.j2

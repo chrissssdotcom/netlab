@@ -1,0 +1,7 @@
+- name: Reload NetworkManager connections
+  ansible.builtin.command: nmcli connection reload
+  changed_when: true
+
+- name: Activate VPC connection
+  ansible.builtin.shell: nmcli connection reload && nmcli connection up dn42-vpc
+  changed_when: true
