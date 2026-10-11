@@ -1,5 +1,7 @@
 # One command from nothing to a working network: create missing VPSes, wait until
 # they accept SSH, then build every router. Re-running is safe and cheap.
+# In check mode (--check / Semaphore "dry run") it only reports what would be created:
+# no server exists yet to connect to, so nothing after provisioning runs.
 - name: Create any missing servers
   ansible.builtin.import_playbook: provision.yml
 
@@ -11,6 +13,8 @@
       ansible.builtin.wait_for_connection:
         delay: 5
         timeout: 300
+      when: not ansible_check_mode
 
 - name: Build the routers
   ansible.builtin.import_playbook: site.yml
+  when: not ansible_check_mode

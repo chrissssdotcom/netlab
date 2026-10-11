@@ -44,6 +44,11 @@ if ansible-playbook provision.yml -e provision_create=false -e linode_api_url=ht
 else echo "ok   lookup-only mode fails when a server is missing"; fi
 ok "lookup-only mode created nothing" "$(stat creates)" 4
 
+# deploy.yml in check mode must stop after provisioning: no SSH to placeholder IPs
+before=$(stat creates)
+out=$(ansible-playbook deploy.yml --check "${args[@]}" -e 'ansible_ssh_common_args=-o ConnectTimeout=3' 2>&1)   && ! echo "$out" | grep -Eq 'unreachable=[1-9]|UNREACHABLE'   && echo "ok   deploy.yml --check never tries to SSH anywhere"   || { echo "FAIL deploy.yml --check touched the network"; fail=1; }
+ok "deploy.yml --check created nothing" "$(stat creates)" "$before"
+
 # An unset admin key must stop everything before any API call can match or create anything
 before=$(stat creates)
 if DN42_ADMIN_SSH_PUBKEY="" ansible-playbook provision.yml "${args[@]}" >/dev/null 2>&1; then
