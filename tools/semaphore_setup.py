@@ -91,10 +91,10 @@ class Api:
         if existing:
             body = dict(body, id=existing["id"])
             self.call("PUT", f"{path}/{existing['id']}", body, write=True)
-            print(f"  updated  {label}: {name}")
+            print(f"  {'would update' if self.dry else 'updated':<12} {label}: {name}")
             return existing["id"], existing
         made = self.call("POST", path, body, write=True)
-        print(f"  created  {label}: {name}")
+        print(f"  {'would create' if self.dry else 'created':<12} {label}: {name}")
         return made.get("id"), None
 
 
@@ -135,7 +135,7 @@ def main():
         print(f"  found    project: {a.project} (id {pid})")
     else:
         pid = api.call("POST", "/projects", {"name": a.project}, write=True).get("id")
-        print(f"  created  project: {a.project}")
+        print(f"  {'would create' if a.dry_run else 'created':<12} project: {a.project}")
     base = f"/project/{pid}"
 
     # --- keys ----------------------------------------------------------------------
@@ -209,7 +209,8 @@ def main():
     template("dn42 - road warrior configs", "rw-clients.yml", "Client configs per device and PoP; -e only=<name>", allow_args=True)
 
     print("\nDone." if not a.dry_run else "\nDry run finished; nothing was written.")
-    print(f"Project: {url.rstrip('/')}/project/{pid}/templates")
+    if not a.dry_run:
+        print(f"Project: {url.rstrip('/')}/project/{pid}/templates")
     print("Remember: the first full run should come from your workstation so pubkeys/ can be committed (docs/SEMAPHORE.md).")
 
 
