@@ -37,4 +37,7 @@ address1={{ vpc_gw4 }}/{{ vpc_dn42_net4.split('/')[1] }}
 [ipv6]
 method=manual
 address1={{ vpc_dn42_net6 | regex_replace('::/64$', '::1/64') }}
+{% if edge_bgp_enabled | bool and edge_neighbor6 | length > 0 %}
+address2={{ edge_vlan_gw6 }}/64
+{% endif %}
 never-default=true

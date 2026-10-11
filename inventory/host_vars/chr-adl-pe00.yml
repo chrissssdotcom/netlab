@@ -4,8 +4,8 @@ location: Adelaide, AU
 provider: Home
 provider_region: home
 public_interface: ens18        # TODO: check with `ip -br link`
-public_ipv4: ""                # dynamic — R1 always dials out, so peers need no endpoint for it
-wg_endpoint: ""                # set to a DDNS name (e.g. home.example.net) if you have one
+public_ipv4: "{{ edge_public_ipv4 if edge_bgp_enabled | bool else '' }}"   # the routed /32 once the edge session is on
+wg_endpoint: ""                # empty = peers wait for us; set once the edge session is on (defaults to public_ipv4)
 wg_mtu: 1412                   # lower if your NBN service uses PPPoE; 1420 on plain IPoE
 
 community_region: 53           # Pacific & Oceania
@@ -28,3 +28,16 @@ vpc_enabled: true
 vpc_type: vlan
 vlan_id: 42                    # TODO: the VLAN id on your home switch/router
 vlan_parent: "{{ public_interface }}"   # the trunk NIC; change if the VLAN rides a different one
+
+# --- Edge BGP with the UniFi ------------------------------------------------------------------
+# Enable only after the UniFi side is configured (docs/EDGE-UNIFI.md) and the values below are real:
+# a wrong prefix or neighbour is announced/accepted as written. The session is eBGP between two
+# private ASNs on the LAN; Rocky announces the /32 and the /60 and learns default routes.
+edge_bgp_enabled: false
+edge_local4: 192.168.88.10          # TODO: this router's LAN address (same as ansible_host)
+edge_neighbor4: 192.168.88.1        # TODO: the UniFi's LAN address
+edge_local6: ""                     # TODO: this router's global/ULA address on that LAN, e.g. fd00:88::10
+edge_neighbor6: ""                  # TODO: the UniFi's, e.g. fd00:88::1
+edge_public_ipv4: 103.155.36.71     # routed by the UniFi to edge_local4; used as the public address
+edge_site_net6: 2402:3120:20fe::/48
+edge_public_net6: 2402:3120:20fe:10::/60   # TODO: confirm this /60 is unused; first /64 goes on the VLAN

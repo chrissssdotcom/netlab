@@ -59,6 +59,14 @@ table inet dn42 {
 		iifname "{{ vpc_iface }}" udp sport 67 udp dport 68 accept
 
 {% endif %}
+{% if edge_bgp_enabled | bool %}
+		# BGP from the edge router, on the LAN, from its address only
+		iifname "{{ public_interface }}" ip saddr {{ edge_neighbor4 }} tcp dport 179 accept
+{% if edge_neighbor6 | length > 0 %}
+		iifname "{{ public_interface }}" ip6 saddr {{ edge_neighbor6 }} tcp dport 179 accept
+{% endif %}
+
+{% endif %}
 		# Routing protocols only ever arrive inside tunnels
 		iifname "wg-r*" tcp dport 179 accept
 		iifname "dn42-*" tcp dport 179 accept
@@ -113,6 +121,13 @@ table inet dn42 {
 		iifname "{{ vpc_iface }}" oifname "{{ out }}" ip6 saddr { {{ dn42_aggregates6 | join(', ') }} } accept
 		iifname "{{ out }}" oifname "{{ vpc_iface }}" accept
 {% endfor %}
+{% endif %}
+{% if edge_bgp_enabled | bool and edge_neighbor6 | length > 0 and vpc_enabled | bool %}
+
+		# Hosts on the VLAN with the public IPv6 /60: out to the Internet from their own slice only
+		# (never from dn42 space), and back in for connections they started. No unsolicited inbound.
+		iifname "{{ vpc_iface }}" oifname "{{ public_interface }}" ip6 saddr {{ edge_public_net6 }} accept
+		iifname "{{ public_interface }}" oifname "{{ vpc_iface }}" ip6 daddr {{ edge_public_net6 }} ct state established,related accept
 {% endif %}
 {% if rw_enabled | bool %}
 

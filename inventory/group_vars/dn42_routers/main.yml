@@ -115,6 +115,24 @@ bgp_max_path_len: 25
 ebgp_export_prepend: 0
 ebgp_peers: []
 
+# --- Edge BGP: a PoP behind a router of its own (the home PoP behind the UniFi) -------------
+# A *separate* eBGP session from dn42, over private ASNs. The PoP announces the public addresses
+# it owns to the edge router and, if the edge sends defaults, uses it as its Internet gateway.
+# Nothing learned here ever reaches the dn42 mesh, and dn42 is never forwarded to the Internet.
+edge_bgp_enabled: false
+edge_local_asn: 64513       # this router
+edge_peer_asn: 64512        # the edge router
+edge_local4: ""             # this router's address on the LAN it shares with the edge (v4)
+edge_neighbor4: ""          # the edge router's address on that LAN
+edge_local6: ""             # same, IPv6 (global/ULA, not link-local)
+edge_neighbor6: ""
+edge_public_ipv4: ""        # a public /32 the edge routes to this router; bound on dummy pub0
+edge_public_net6: ""        # the public IPv6 slice (a /60); the first /64 goes on the VLAN, router = ::1
+edge_site_net6: ""          # the /48 the slice must come from
+edge_vlan_net6: "{{ edge_public_net6 | regex_replace('::/60$', '::/64') }}"
+edge_vlan_gw6: "{{ edge_public_net6 | regex_replace('::/60$', '::1') }}"
+edge_bgp_password: "{{ lookup('ansible.builtin.env', 'EDGE_BGP_PASSWORD') }}"   # optional MD5 password
+
 # --- BIRD -----------------------------------------------------------------------
 bird_config_path: /etc/bird.conf
 bird_roa_dir: /etc/bird

@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Public addresses routed to {{ inventory_hostname }} by the edge router (dummy pub0)
+After=network-pre.target
+Before=network.target bird.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/usr/sbin/ip link add pub0 type dummy
+ExecStart=/usr/sbin/ip link set pub0 up
+ExecStart=/usr/sbin/ip address replace {{ edge_public_ipv4 }}/32 dev pub0
+ExecStop=/usr/sbin/ip link del pub0
+
+[Install]
+WantedBy=multi-user.target

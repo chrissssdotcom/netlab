@@ -114,4 +114,15 @@ ansible-playbook provision.yml --limit chr-fra-pe00 -e provider=Vultr -e vpc_ena
 ansible-playbook provision.yml --limit chr-lax-pe00 -e vpc_enabled=true -e vpc_type=vpc "${args[@]}" >/dev/null
 ok "default: each PoP's own /29 is its provider subnet" "$(stat subnets)" "['172.22.169.40/29', '172.22.169.48/29']"
 
+# The listing tool must show what exists and never delete anything
+kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
+python3 tests/mock_provider_api.py $port & mock=$!
+for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
+ansible-playbook provision.yml -e vpc_enabled=true -e vpc_type=vlan "${args[@]}" >/dev/null
+out=$(python3 tools/list_cloud_resources.py --linode-url "http://127.0.0.1:$port/v4" --vultr-url "http://127.0.0.1:$port/v2")
+for h in chr-fra-pe00 chr-lax-pe00 chr-tyo-pe00 chr-syd-pe00; do echo "$out" | grep -q "$h" || { echo "FAIL lister missed $h"; fail=1; }; done
+echo "$out" | grep -q 'about \$20/month' && echo "ok   lister shows the cost of the four servers" || { echo "FAIL lister cost"; fail=1; }
+echo "$out" | grep -q 'This tool deleted nothing' && echo "ok   lister states it deleted nothing" || { echo "FAIL lister message"; fail=1; }
+ok "lister sent no DELETE request" "$(stat deletes)" 0
+
 exit $fail

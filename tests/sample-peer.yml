@@ -22,3 +22,13 @@ rw_clients:
 # each PoP's own /29 (pop_block4), the default.
 vpc_enabled: true
 vpc_interface: ens7
+
+# Edge BGP (render-only; documentation ranges, enabled on every PoP so each renders it)
+edge_bgp_enabled: true
+edge_local4: 192.0.2.10
+edge_neighbor4: 192.0.2.1
+edge_local6: "2001:db8:88::10"
+edge_neighbor6: "2001:db8:88::1"
+edge_public_ipv4: 198.51.100.71
+edge_site_net6: "2001:db8:fe::/48"
+edge_public_net6: "2001:db8:fe:10::/60"

@@ -88,6 +88,40 @@ want build/chr-adl-pe00/dn42.nft 'iifname "ens18\.42" oifname "wg-r\*" ip saddr'
 want build/chr-lax-pe00/dn42-vpc.nmconnection '^type=ethernet$'
 want build/chr-lax-pe00/dn42-vpc.nmconnection '^interface-name=ens7$'
 ! grep -q '^\[vlan\]' build/chr-lax-pe00/dn42-vpc.nmconnection || { echo "Linode NIC rendered as a tagged VLAN"; fail=1; }
+# --- edge BGP: private ASNs, strict filters, never leaks into dn42 ---------------------------
+E=build/chr-adl-pe00
+want $E/bird.conf '^protocol bgp edge4 \{'
+want $E/bird.conf '^	local 192\.0\.2\.10 as 64513;'
+want $E/bird.conf '^	neighbor 192\.0\.2\.1 as 64512;'
+want $E/bird.conf '^		export filter edge_export4;'
+want $E/bird.conf '^	if net ~ \[ 198\.51\.100\.71/32 \] then accept;'
+want $E/bird.conf '^	if net ~ \[ 0\.0\.0\.0/0 \] then accept;'
+want $E/bird.conf '^	if net ~ \[ ::/0 \] then accept;'
+want $E/bird.conf '^	route 2001:db8:fe:10::/60 unreachable;'
+want $E/bird.conf '^	neighbor 2001:db8:88::1 as 64512;'
+want $E/bird.conf 'krt_prefsrc = 198\.51\.100\.71;'
+want $E/bird.conf 'krt_prefsrc = 2001:db8:fe:10::1;'
+want $E/bird.conf '^	if proto ~ "edge\*" then return false;'
+want $E/bird.conf '^	if proto ~ "edge\*" then reject;'
+! grep -q '^	password' $E/bird.conf || { echo "BGP password rendered without EDGE_BGP_PASSWORD"; fail=1; }
+want $E/edge-public.service 'ip address replace 198\.51\.100\.71/32 dev pub0'
+want $E/dn42.nft 'ip saddr 192\.0\.2\.1 tcp dport 179 accept'
+want $E/dn42.nft 'ip6 saddr 2001:db8:88::1 tcp dport 179 accept'
+want $E/dn42.nft 'ip6 saddr 2001:db8:fe:10::/60 accept'
+want $E/dn42.nft 'ip6 daddr 2001:db8:fe:10::/60 ct state established,related accept'
+want $E/dn42-vpc.nmconnection '^address2=2001:db8:fe:10::1/64$'
+# off by default: no edge protocols, no leak guards needed, no public rules
+rm -f $E/edge-public.service
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook tests/render.yml -e pubkey_dir="$tmp/pubkeys" -e bird_roa_dir="$tmp/roa"   -e @tests/sample-peer.yml -e edge_bgp_enabled=false >/dev/null
+! grep -q 'protocol bgp edge' $E/bird.conf || { echo "edge BGP rendered while disabled"; fail=1; }
+! grep -q 'krt_prefsrc = 198' $E/bird.conf || { echo "edge prefsrc rendered while disabled"; fail=1; }
+! grep -q 'tcp dport 179 accept' <(grep 'saddr' $E/dn42.nft) || { echo "edge BGP firewall rule rendered while disabled"; fail=1; }
+[ ! -e $E/edge-public.service ] || { echo "stale edge unit"; fail=1; }
+# optional MD5 password
+EDGE_BGP_PASSWORD=sekrit ANSIBLE_CONFIG=ansible.cfg ansible-playbook tests/render.yml -e pubkey_dir="$tmp/pubkeys" -e bird_roa_dir="$tmp/roa"   -e @tests/sample-peer.yml >/dev/null
+want $E/bird.conf '^	password "sekrit";'
+# the default render the rest of the checks expect
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook tests/render.yml -e pubkey_dir="$tmp/pubkeys" -e bird_roa_dir="$tmp/roa"   -e @tests/sample-peer.yml >/dev/null
 echo "road warrior checks done"
 
 # VLAN mode (Linode): static addressing, IPv6 always, no DHCP anywhere

@@ -118,6 +118,7 @@ function dn42_import_filter(int link_latency; int link_bandwidth; int link_crypt
 # To external dn42 peers: our aggregates (tagged with this PoP's region/country)
 # plus dn42 routes we learned by BGP. Internal more-specifics never leave the AS.
 function dn42_export_filter(int link_latency; int link_bandwidth; int link_crypto) {
+	if proto ~ "edge*" then reject;               # public-Internet routes never go to dn42 peers
 	if !is_valid_network() then reject;
 	if is_self_net() then {
 		if !(proto ~ "static_agg*") then reject;
@@ -140,6 +141,7 @@ function ibgp_import() -> bool {
 }
 
 function ibgp_export() -> bool {
+	if proto ~ "edge*" then return false;         # the edge router's routes never enter the dn42 mesh
 	if proto ~ "static_agg*" then return false;   # every PoP originates these itself
 	if is_loopback6() then return false;          # OSPFv3 carries v6 loopbacks
 	if source = RTS_BGP then return true;
@@ -165,6 +167,10 @@ protocol kernel kernel4 {
 		import none;
 		export filter {
 			if source = RTS_DEVICE then reject;
+{% if edge_bgp_enabled | bool %}
+			# the edge's default route: this router's own traffic leaves from its public address
+			if proto ~ "edge*" then { krt_prefsrc = {{ edge_public_ipv4 }}; accept; }
+{% endif %}
 			if source = RTS_BGP then krt_prefsrc = OWNIP;
 			accept;
 		};
@@ -177,6 +183,9 @@ protocol kernel kernel6 {
 		import none;
 		export filter {
 			if source = RTS_DEVICE then reject;
+{% if edge_bgp_enabled | bool and edge_neighbor6 | length > 0 %}
+			if proto ~ "edge*" then { krt_prefsrc = {{ edge_vlan_gw6 }}; accept; }
+{% endif %}
 			if source = RTS_BGP || source = RTS_OSPF then krt_prefsrc = OWNIPv6;
 			accept;
 		};
@@ -322,3 +331,76 @@ protocol bgp ebgp_{{ p.name }} from dnpeers {
 }
 
 {% endfor %}
+{% if edge_bgp_enabled | bool %}
+
+################################################################################
+# Edge BGP — private-ASN eBGP to the edge router. Separate from dn42: it announces only
+# this site's public addresses and accepts only default routes. Protocol names start with
+# "edge" so the policies above can keep these routes out of iBGP and out of dn42.
+################################################################################
+filter edge_import4 {
+	if net ~ [ 0.0.0.0/0 ] then accept;
+	reject;
+}
+
+filter edge_export4 {
+	if net ~ [ {{ edge_public_ipv4 }}/32 ] then accept;
+	reject;
+}
+
+protocol direct edge_direct {
+	ipv4;
+	interface "pub0";
+}
+
+protocol bgp edge4 {
+	description "{{ edge_peer_asn }} edge router (IPv4)";
+	local {{ edge_local4 }} as {{ edge_local_asn }};
+	neighbor {{ edge_neighbor4 }} as {{ edge_peer_asn }};
+	direct;
+	graceful restart on;
+{% if edge_bgp_password %}
+	password "{{ edge_bgp_password }}";
+{% endif %}
+	ipv4 {
+		import filter edge_import4;
+		export filter edge_export4;
+		import limit 4 action block;
+	};
+}
+{% if edge_neighbor6 | length > 0 %}
+
+filter edge_import6 {
+	if net ~ [ ::/0 ] then accept;
+	reject;
+}
+
+filter edge_export6 {
+	if net ~ [ {{ edge_public_net6 }} ] then accept;
+	reject;
+}
+
+# The whole slice is originated here; the VLAN's connected /64 is more specific, so unused
+# subnets of the /60 are dropped instead of following the default route.
+protocol static edge_static6 {
+	ipv6;
+	route {{ edge_public_net6 }} unreachable;
+}
+
+protocol bgp edge6 {
+	description "{{ edge_peer_asn }} edge router (IPv6)";
+	local {{ edge_local6 }} as {{ edge_local_asn }};
+	neighbor {{ edge_neighbor6 }} as {{ edge_peer_asn }};
+	direct;
+	graceful restart on;
+{% if edge_bgp_password %}
+	password "{{ edge_bgp_password }}";
+{% endif %}
+	ipv6 {
+		import filter edge_import6;
+		export filter edge_export6;
+		import limit 4 action block;
+	};
+}
+{% endif %}
+{% endif %}

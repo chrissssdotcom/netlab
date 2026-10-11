@@ -122,6 +122,14 @@ Add an entry to that PoP's `ebgp_peers` (see the commented example in
 your ASN, the PoP's public IP and the `listen_port`, your link-local
 `fe80::3420`, and the router's public key (`pubkeys/r2.pub`).
 
+## 4b. The home PoP's BGP session to the UniFi edge
+
+`chr-adl-pe00` can peer with the UniFi gateway over a separate private-ASN eBGP session: Rocky
+announces `103.155.36.71/32` and a `/60` of `2402:3120:20fe::/48` and learns default routes, so the
+public address is routed to the router and the VLAN behind it gets public IPv6. It is **off by default**
+(`edge_bgp_enabled: false`) until the UniFi side is configured and the TODO values in
+`host_vars/chr-adl-pe00.yml` are real. See [`docs/EDGE-UNIFI.md`](docs/EDGE-UNIFI.md).
+
 ## 5. Road warriors (phones and laptops joining dn42 from anywhere)
 
 Every PoP runs a WireGuard server (`rw0`, UDP 51820). A device connects to
@@ -161,6 +169,9 @@ PoPs reach a connected device with no extra routing.
 To remove a device, delete its entry and run `site.yml`. To switch the feature
 off, set `rw_enabled: false`. The home PoP (chr-adl-pe00) needs a DDNS name in
 `wg_endpoint` and a UDP 51820 port-forward before clients can use it.
+
+**Tearing down:** `python tools/list_cloud_resources.py` lists what exists at Linode and Vultr with the
+estimated cost and the delete commands. It is read-only: deleting servers is done by you, in the console or CLI.
 
 Further reading: [`docs/SEMAPHORE.md`](docs/SEMAPHORE.md) to run this from Semaphore,
 [`docs/HOSTING.md`](docs/HOSTING.md) to put services (web pages, an auto-peering

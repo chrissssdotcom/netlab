@@ -13,7 +13,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "testtoken"
-state = {"linode": [], "vultr": [], "keys": [], "ln_vpcs": [], "vu_vpcs": [], "attached": 0, "vlans": 0,
+state = {"linode": [], "vultr": [], "keys": [], "ln_vpcs": [], "vu_vpcs": [], "attached": 0, "vlans": 0, "deletes": 0,
          "creates": 0, "unauth": 0, "next_id": 1000}
 
 
@@ -49,7 +49,7 @@ class H(BaseHTTPRequestHandler):
         if p == "/_stats":
             return self.send(200, {"creates": state["creates"], "ssh_keys": len(state["keys"]),
                                    "unauthorised": state["unauth"], "vpcs": len(state["ln_vpcs"]) + len(state["vu_vpcs"]),
-                                   "attached": state["attached"], "vlans": state["vlans"],
+                                   "attached": state["attached"], "vlans": state["vlans"], "deletes": state["deletes"],
                                    "subnets": sorted([f'{v["v4_subnet"]}/{v["v4_subnet_mask"]}' for v in state["vu_vpcs"]]
                                                      + [sn["ipv4"] for v in state["ln_vpcs"] for sn in v["subnets"]]),
                                    "servers": [s["label"] for s in state["linode"] + state["vultr"]]})
@@ -68,6 +68,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, {"data": state["ln_vpcs"], "page": 1, "pages": 1, "results": len(state["ln_vpcs"])})
         if p == "/v2/vpcs":
             return self.send(200, {"vpcs": state["vu_vpcs"], "meta": {"total": len(state["vu_vpcs"])}})
+        if p == "/v4/networking/vlans":
+            return self.send(200, {"data": [], "page": 1, "pages": 1, "results": 0})
         if p == "/v2/ssh-keys":
             return self.send(200, {"ssh_keys": state["keys"], "meta": {"total": len(state["keys"])}})
         if p == "/v2/instances":
@@ -81,6 +83,10 @@ class H(BaseHTTPRequestHandler):
                 s.update(status="active", power_status="running", main_ip=s["ip"])
             return self.send(200, {"instance": s})
         self.send(404, {"error": "unknown path " + p})
+
+    def do_DELETE(self):
+        state["deletes"] += 1          # a real DELETE would remove things: the mock only counts them
+        self.send(204, {})
 
     def do_POST(self):
         p = self.path.split("?")[0]

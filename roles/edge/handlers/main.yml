@@ -1,0 +1,5 @@
+- name: Restart edge-public
+  ansible.builtin.systemd_service:
+    name: edge-public.service
+    state: restarted
+    daemon_reload: true
