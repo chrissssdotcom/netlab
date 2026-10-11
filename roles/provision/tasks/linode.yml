@@ -1,0 +1,71 @@
+- name: Look for an existing Linode with our label
+  ansible.builtin.uri:
+    url: "{{ linode_api_url }}/linode/instances?page_size=500"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'LINODE_TOKEN') }}"
+      X-Filter: '{"label": "{{ provision_label }}"}'
+    return_content: true
+  register: ln_list
+  check_mode: false
+  changed_when: false
+  no_log: true
+
+- name: Exactly this label (never adopt a similarly named server)
+  ansible.builtin.set_fact:
+    ln_inst: "{{ ln_list.json.data | selectattr('label', 'equalto', provision_label) | list | first | default({}) }}"
+
+- name: Refuse to create when only lookups are wanted
+  ansible.builtin.fail:
+    msg: "{{ provision_label }} does not exist at Linode and provision_create is false"
+  when: ln_inst | length == 0 and not (provision_create | bool)
+
+- name: Create the Linode
+  ansible.builtin.uri:
+    url: "{{ linode_api_url }}/linode/instances"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'LINODE_TOKEN') }}"
+    body_format: json
+    body:
+      label: "{{ provision_label }}"
+      region: "{{ provider_region }}"
+      type: "{{ provision_plan }}"
+      image: "{{ provision_image }}"
+      # Key-only access: the root password is random, never shown, never stored
+      root_pass: "{{ lookup('ansible.builtin.password', '/dev/null', length=40, chars=['ascii_letters', 'digits']) }}"
+      authorized_keys: ["{{ provision_ssh_public_key }}"]
+      tags: "{{ provision_tags }}"
+      booted: true
+      backups_enabled: false
+    status_code: [200, 201]
+    return_content: true
+  register: ln_created
+  when: ln_inst | length == 0
+  no_log: true
+
+- name: Would create (check mode)
+  ansible.builtin.debug:
+    msg: "would create Linode {{ provision_label }}: {{ provision_plan }} in {{ provider_region }}"
+  when: ln_inst | length == 0 and ansible_check_mode
+
+- name: Wait until the Linode is running
+  ansible.builtin.uri:
+    url: "{{ linode_api_url }}/linode/instances/{{ ln_id }}"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'LINODE_TOKEN') }}"
+    return_content: true
+  vars:
+    ln_id: "{{ ln_inst.id if ln_inst | length > 0 else ln_created.json.id }}"
+  register: ln_now
+  until: ln_now.json.status == 'running'
+  retries: "{{ ((provision_timeout | int) / (provision_poll_delay | int)) | int }}"
+  delay: "{{ provision_poll_delay }}"
+  check_mode: false
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Public address
+  ansible.builtin.set_fact:
+    provision_ip: "{{ ln_now.json.ipv4 | first }}"
+  when: not ansible_check_mode

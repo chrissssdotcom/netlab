@@ -1,0 +1,41 @@
+# Vultr wants SSH keys registered in the account before an instance can use them.
+# provision.yml runs this one host at a time (serial: 1) so parallel hosts can never
+# register the same key twice.
+- name: Registered SSH keys
+  ansible.builtin.uri:
+    url: "{{ vultr_api_url }}/ssh-keys?per_page=500"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
+    return_content: true
+  register: vu_keys
+  check_mode: false
+  changed_when: false
+  no_log: true
+
+- name: Is our admin key already registered (same key material)?
+  ansible.builtin.set_fact:
+    vu_key_id: >-
+      {{ vu_keys.json.ssh_keys
+         | selectattr('ssh_key', 'search', provision_ssh_public_key.split()[1] | regex_escape)
+         | map(attribute='id') | list | first | default('') }}
+
+- name: Register the admin SSH key
+  ansible.builtin.uri:
+    url: "{{ vultr_api_url }}/ssh-keys"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
+    body_format: json
+    body:
+      name: "{{ provision_ssh_key_name }}"
+      ssh_key: "{{ provision_ssh_public_key }}"
+    status_code: [200, 201]
+    return_content: true
+  register: vu_key_new
+  when: vu_key_id | length == 0 and not ansible_check_mode
+  no_log: true
+
+- name: Remember the key id for the instance create call
+  ansible.builtin.set_fact:
+    vu_key_id: "{{ vu_key_new.json.ssh_key.id }}"
+  when: vu_key_new is not skipped

@@ -1,0 +1,16 @@
+# One command from nothing to a working network: create missing VPSes, wait until
+# they accept SSH, then build every router. Re-running is safe and cheap.
+- name: Create any missing servers
+  ansible.builtin.import_playbook: provision.yml
+
+- name: Wait for the servers to accept our key
+  hosts: dn42_routers
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH login
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 300
+
+- name: Build the routers
+  ansible.builtin.import_playbook: site.yml

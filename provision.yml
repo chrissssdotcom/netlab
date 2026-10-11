@@ -1,0 +1,27 @@
+# Create any missing VPSes at Vultr/Linode and learn every PoP's public IP.
+# Idempotent. Needs, in the environment: LINODE_TOKEN, VULTR_API_KEY, DN42_ADMIN_SSH_PUBKEY.
+#   ansible-playbook provision.yml --check                      # show what would be created, create nothing
+#   ansible-playbook provision.yml                              # create what is missing
+#   ansible-playbook provision.yml -e provision_create=false    # lookups only, fail if one is missing
+# To also build the routers: ansible-playbook deploy.yml
+- name: Register the admin SSH key at Vultr (one host at a time, so it is registered once)
+  hosts: dn42_routers
+  connection: local
+  gather_facts: false
+  serial: 1
+  tasks:
+    - name: Ensure the key exists
+      ansible.builtin.include_role:
+        name: provision
+        tasks_from: vultr_key.yml
+      when:
+        - provision_enabled | bool
+        - provider == 'Vultr'
+        - provision_create | bool
+
+- name: Provision PoP servers
+  hosts: dn42_routers
+  connection: local
+  gather_facts: false
+  roles:
+    - provision

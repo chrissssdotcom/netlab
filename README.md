@@ -60,6 +60,32 @@ router only needs to forward UDP if you want dn42 peers to connect *to* you
 - `inventory/host_vars/rN.yml` — `public_ipv4`, `public_interface` (check with
   `ip -br link`), and later `ebgp_peers`.
 
+## 2b. Or let the playbooks create the servers
+
+`provision.yml` creates the Vultr and Linode servers through their APIs (Rocky Linux 9,
+the $5 / 1 GB plan, your SSH key), finds any that already exist by their label
+(`dn42-r2`, ...) and learns each public IP at run time, so no IP is ever committed.
+The home PoP is never touched. `deploy.yml` does that and then builds the routers.
+
+```bash
+export VULTR_API_KEY=...  LINODE_TOKEN=...            # API tokens, never stored in the repo
+export DN42_ADMIN_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)"   # gets root on every server
+ansible-playbook provision.yml --check     # shows what would be created, creates nothing
+ansible-playbook deploy.yml                # create what is missing, then build everything
+```
+
+- **It costs money**: about $5/month per server, billed from creation. Run `--check` first.
+- It is idempotent and only ever *creates*; it never deletes or resizes. Destroy
+  servers in the provider's console, then re-run `deploy.yml` to rebuild.
+- A rebuilt server gets a new WireGuard key and IP. A full `deploy.yml` run updates
+  the mesh; then re-commit `pubkeys/` and give any external dn42 peers the new key and endpoint.
+- Vultr: allow the runner's IP under *Account > API > Access Control* or every call
+  returns 401. Tokens need read/write on servers (Linode) / the default key (Vultr).
+- A fresh server accepts the provider's generated root password until the first run
+  hardens SSH (a few minutes); `deploy.yml` does that straight away.
+- `provision_create: false` (or `-e provision_create=false`) turns it into a lookup
+  that fails if a server is missing, which is a safe mode for routine runs.
+
 ## 3. Run
 
 ```bash
@@ -133,6 +159,9 @@ journalctl -u dn42-roa -n 20         # ROA refresh results
 ```
 
 ## Test locally
+
+`tests/provision-test.sh` exercises provisioning against a local mock of the Linode and
+Vultr APIs (no account or cost; needs ansible-core and python3).
 
 `tests/run.sh` renders all five PoPs and parses them with the real tools
 (`bird -p`, `nft -c`, `wg-quick strip`, `bash -n`). It needs ansible-core,

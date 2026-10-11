@@ -1,0 +1,40 @@
+# Make sure this PoP's VPS exists at its provider and learn its public IP.
+# Idempotent: the instance is found by label and only created if it is missing.
+# Credentials come from the environment (LINODE_TOKEN / VULTR_API_KEY), never the repo.
+- name: Provision this PoP's server
+  when: provision_enabled | bool
+  block:
+    - name: Preflight — credentials and SSH key present
+      ansible.builtin.assert:
+        that:
+          - provision_ssh_public_key is match('^(ssh-ed25519|ssh-rsa|ecdsa-sha2-[a-z0-9]+) ')
+          - provision_token | length > 0
+          - provision_plan | string | length > 0
+          - provider_region | length > 0
+        fail_msg: >-
+          Set DN42_ADMIN_SSH_PUBKEY (your admin public key) and
+          {{ 'VULTR_API_KEY' if provider == 'Vultr' else 'LINODE_TOKEN' }}
+          in the environment (Semaphore: Environment variables, marked secret)
+        quiet: true
+      vars:
+        provision_token: "{{ lookup('ansible.builtin.env', 'VULTR_API_KEY' if provider == 'Vultr' else 'LINODE_TOKEN') }}"
+
+    - name: Talk to the provider API
+      ansible.builtin.include_tasks: "{{ provider | lower }}.yml"
+
+    - name: Use the provider's address for this run (never committed, never stale)
+      ansible.builtin.set_fact:
+        public_ipv4: "{{ provision_ip }}"
+        ansible_host: "{{ provision_ip }}"
+      when: provision_ip | default('') | length > 0
+
+    - name: Wait for SSH
+      ansible.builtin.wait_for:
+        host: "{{ provision_ip }}"
+        port: 22
+        search_regex: OpenSSH
+        timeout: "{{ provision_timeout }}"
+      when:
+        - provision_wait_ssh | bool
+        - provision_ip | default('') | length > 0
+        - not ansible_check_mode

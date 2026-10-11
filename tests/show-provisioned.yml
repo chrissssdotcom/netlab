@@ -1,0 +1,11 @@
+# Test helper: provision, then print what a later play would connect to.
+- ansible.builtin.import_playbook: ../provision.yml
+
+- name: Show addresses seen by later plays
+  hosts: dn42_routers
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Connection address and endpoint
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ ansible_host }} endpoint={{ wg_endpoint }}"

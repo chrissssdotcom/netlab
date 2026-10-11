@@ -1,0 +1,82 @@
+- name: Look for an existing instance with our label
+  ansible.builtin.uri:
+    url: "{{ vultr_api_url }}/instances?per_page=500&label={{ provision_label }}"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
+    return_content: true
+  register: vu_list
+  check_mode: false
+  changed_when: false
+  no_log: true
+
+- name: Exactly this label (never adopt a similarly named server)
+  ansible.builtin.set_fact:
+    vu_inst: "{{ vu_list.json.instances | selectattr('label', 'equalto', provision_label) | list | first | default({}) }}"
+
+- name: Refuse to create when only lookups are wanted
+  ansible.builtin.fail:
+    msg: "{{ provision_label }} does not exist at Vultr and provision_create is false"
+  when: vu_inst | length == 0 and not (provision_create | bool)
+
+- name: Creating a new instance
+  when: vu_inst | length == 0
+  block:
+    - name: The admin SSH key was registered by the earlier serial step
+      ansible.builtin.assert:
+        that: vu_key_id | default('') | length > 0 or ansible_check_mode
+        fail_msg: "No Vultr SSH key id — run provision.yml, not just the role"
+        quiet: true
+
+    - name: Create the instance
+      ansible.builtin.uri:
+        url: "{{ vultr_api_url }}/instances"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
+        body_format: json
+        body:
+          label: "{{ provision_label }}"
+          hostname: "{{ provision_label }}"
+          region: "{{ provider_region }}"
+          plan: "{{ provision_plan }}"
+          os_id: "{{ provision_image | int }}"
+          sshkey_id: ["{{ vu_key_id }}"]
+          enable_ipv6: true
+          backups: disabled
+          activation_email: false
+          tags: "{{ provision_tags }}"
+        status_code: [200, 201, 202]
+        return_content: true
+      register: vu_created
+      when: not ansible_check_mode
+      no_log: true
+
+    - name: Would create (check mode)
+      ansible.builtin.debug:
+        msg: "would create Vultr instance {{ provision_label }}: {{ provision_plan }} in {{ provider_region }}"
+      when: ansible_check_mode
+
+- name: Wait until the instance is active with an address
+  ansible.builtin.uri:
+    url: "{{ vultr_api_url }}/instances/{{ vu_id }}"
+    headers:
+      Authorization: "Bearer {{ lookup('ansible.builtin.env', 'VULTR_API_KEY') }}"
+    return_content: true
+  vars:
+    vu_id: "{{ vu_inst.id if vu_inst | length > 0 else vu_created.json.instance.id }}"
+  register: vu_now
+  until:
+    - vu_now.json.instance.status == 'active'
+    - vu_now.json.instance.power_status == 'running'
+    - vu_now.json.instance.main_ip not in ['', '0.0.0.0']
+  retries: "{{ ((provision_timeout | int) / (provision_poll_delay | int)) | int }}"
+  delay: "{{ provision_poll_delay }}"
+  check_mode: false
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Public address
+  ansible.builtin.set_fact:
+    provision_ip: "{{ vu_now.json.instance.main_ip }}"
+  when: not ansible_check_mode

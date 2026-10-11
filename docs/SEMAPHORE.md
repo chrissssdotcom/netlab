@@ -51,6 +51,17 @@ Without it the first connection to each new VPS waits for a host-key prompt that
 nobody can answer, and the task hangs. (If you would rather pin host keys, add them
 to the `known_hosts` of the user Semaphore runs as and drop this line.)
 
+Provisioning also needs secrets. In the same Environment, add them under
+**Environment variables** and mark them as secrets (they must not be committed):
+
+```json
+{ "VULTR_API_KEY": "...", "LINODE_TOKEN": "...", "DN42_ADMIN_SSH_PUBKEY": "ssh-ed25519 AAAA... admin" }
+```
+
+`DN42_ADMIN_SSH_PUBKEY` is the *public* half of `dn42-routers-ssh`. Semaphore's
+runner needs outbound HTTPS to `api.vultr.com` / `api.linode.com`, and Vultr must
+have the runner's IP in its API access control list.
+
 ## 5. Inventory
 
 Type **File**, path `inventory/hosts.yml`, repository above, user credentials
@@ -66,6 +77,8 @@ up, a laptop can do this from anywhere.
 |---|---|---|
 | `dn42 — deploy all` | `site.yml` | the normal one; idempotent, safe to re-run |
 | `dn42 — deploy one PoP` | `site.yml` | enable *Allow CLI args in task* (or use the template's *Limit* field if your version has one) and pass `--limit r3`; roll out risky changes one PoP at a time |
+| `dn42 — create servers + deploy` | `deploy.yml` | creates any missing VPS, then builds everything; needs the secret variables from section 4 |
+| `dn42 — servers dry run` | `provision.yml` | add `--check` as the template's CLI args: lists what would be created and creates nothing |
 | `dn42 — road warrior configs` | `rw-clients.yml` | prints the client config for every device and PoP in the task log; add `-e only=laptop` for one device |
 
 Leave out `--check`: the first-run tasks generate keys and read them back, so a dry
