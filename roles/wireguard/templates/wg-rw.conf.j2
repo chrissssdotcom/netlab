@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# Road warrior tunnel on {{ inventory_hostname }} ({{ location }}) — roaming clients dial in here
+[Interface]
+ListenPort = {{ rw_listen_port }}
+Address = {{ rw_gw6 }}/64{% if rw_pool4 %}, {{ rw_gw4 }}/{{ rw_pool4_len }}{% endif %}
+
+MTU = {{ wg_mtu }}
+Table = off
+PostUp = wg set %i private-key /etc/wireguard/node.key
+{% for rw_client in rw_clients_here %}
+
+# {{ rw_client.name }}
+[Peer]
+PublicKey = {{ rw_client.wg_pubkey }}
+# Pinned to the client's own addresses: it cannot source traffic from anywhere else
+AllowedIPs = {% if rw_pool4 %}{{ rw_pool4_base }}.{{ (rw_pool4_off | int) + (rw_client.id | int) }}/32, {% endif %}{{ rw_prefix6 }}::{{ '%x' | format(rw_client.id | int) }}/128
+{% endfor %}

@@ -5,7 +5,8 @@
 {% for p in mesh_peers %}{% set _ = mesh_ports.append(mesh_port_base + (hostvars[p].router_id | int)) %}{% endfor %}
 {% set ext_ports = [] %}
 {% for p in ebgp_peers %}{% set _ = ext_ports.append(p.listen_port | default(20000 + ((p.asn | int) % 10000))) %}{% endfor %}
-{% set ssh4 = ssh_allow_from | reject('search', ':') | list %}
+{% if rw_enabled | bool %}{% set _ = ext_ports.append(rw_listen_port | int) %}{% endif %}
+{% set ssh4 =ssh_allow_from | reject('search', ':') | list %}
 {% set ssh6 = ssh_allow_from | select('search', ':') | list %}
 
 flush ruleset
@@ -65,15 +66,24 @@ table inet dn42 {
 		# traceroute to the router gets a proper port-unreachable
 		iifname "wg-r*" udp dport 33434-33534 reject
 		iifname "dn42-*" udp dport 33434-33534 reject
+{% if rw_enabled | bool %}
+		iifname "{{ rw_interface }}" udp dport 33434-33534 reject
+{% endif %}
 {% if dn42_input_tcp_ports %}
 
-		# Services on this router reachable from dn42
+		# Services on this router reachable from dn42 (and from road warriors)
 		iifname "wg-r*" tcp dport { {{ dn42_input_tcp_ports | join(', ') }} } accept
 		iifname "dn42-*" tcp dport { {{ dn42_input_tcp_ports | join(', ') }} } accept
+{% if rw_enabled | bool %}
+		iifname "{{ rw_interface }}" tcp dport { {{ dn42_input_tcp_ports | join(', ') }} } accept
+{% endif %}
 {% endif %}
 {% if dn42_input_udp_ports %}
 		iifname "wg-r*" udp dport { {{ dn42_input_udp_ports | join(', ') }} } accept
 		iifname "dn42-*" udp dport { {{ dn42_input_udp_ports | join(', ') }} } accept
+{% if rw_enabled | bool %}
+		iifname "{{ rw_interface }}" udp dport { {{ dn42_input_udp_ports | join(', ') }} } accept
+{% endif %}
 {% endif %}
 	}
 
@@ -89,5 +99,15 @@ table inet dn42 {
 		iifname "wg-r*" oifname "dn42*" accept
 		iifname "dn42*" oifname "wg-r*" accept
 		iifname "dn42*" oifname "dn42*" accept
+{% if rw_enabled | bool %}
+
+		# Road warriors: dn42 only, in both directions. Their source addresses are
+		# pinned by WireGuard AllowedIPs; nothing here ever reaches the public Internet.
+		iifname "{{ rw_interface }}" oifname "wg-r*" accept
+		iifname "{{ rw_interface }}" oifname "dn42*" accept
+		iifname "{{ rw_interface }}" oifname "{{ rw_interface }}" accept
+		iifname "wg-r*" oifname "{{ rw_interface }}" accept
+		iifname "dn42*" oifname "{{ rw_interface }}" accept
+{% endif %}
 	}
 }

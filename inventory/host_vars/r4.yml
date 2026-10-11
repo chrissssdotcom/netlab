@@ -11,3 +11,6 @@ community_region: 52           # Asia-E
 community_country: 1392        # Japan
 
 ebgp_peers: []
+
+# Road warrior is IPv6-only here until this PoP gets an IPv4 pool, e.g.
+# rw_pool4: 172.22.169.xx/29

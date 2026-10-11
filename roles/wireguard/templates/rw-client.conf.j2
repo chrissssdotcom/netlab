@@ -1,0 +1,17 @@
+# Road warrior client "{{ rw_client.name }}" -> {{ inventory_hostname }} ({{ location }})
+# Import into the WireGuard app, then replace the PrivateKey placeholder with the
+# private key generated on the device (it never touches the routers or this repo).
+[Interface]
+PrivateKey = <PRIVATE-KEY-OF-{{ rw_client.name | upper }}>
+Address = {% if rw_pool4 %}{{ rw_pool4_base }}.{{ (rw_pool4_off | int) + (rw_client.id | int) }}/32, {% endif %}{{ rw_prefix6 }}::{{ '%x' | format(rw_client.id | int) }}/128
+MTU = {{ wg_mtu }}
+{% if rw_dns %}
+DNS = {{ rw_dns | join(', ') }}
+{% endif %}
+
+[Peer]
+# {{ inventory_hostname }}
+PublicKey = {{ rw_server_pubkey }}
+AllowedIPs = {{ rw_client_allowed_ips | join(', ') }}
+Endpoint = {{ ('[' ~ rw_endpoint ~ ']') if ':' in rw_endpoint else rw_endpoint }}:{{ rw_listen_port }}
+PersistentKeepalive = {{ wg_keepalive }}

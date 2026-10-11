@@ -204,11 +204,12 @@ protocol static static_pop6 {
 	ipv6;
 	route {{ pop_prefix6 }} unreachable;
 }
-{% if pop_prefixes4 %}
+{% set pop4 = pop_prefixes4 + ([rw_pool4] if (rw_enabled | bool and rw_pool4) else []) %}
+{% if pop4 %}
 
 protocol static static_pop4 {
 	ipv4;
-{% for p in pop_prefixes4 %}
+{% for p in pop4 %}
 	route {{ p }} unreachable;
 {% endfor %}
 }

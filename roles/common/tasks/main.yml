@@ -78,7 +78,7 @@
     content: |
       # {{ ansible_managed }}
       [keyfile]
-      unmanaged-devices=interface-name:wg-r*;interface-name:dn42*
+      unmanaged-devices=interface-name:wg-r*;interface-name:dn42*;interface-name:{{ rw_interface }}
   notify: Reload NetworkManager
 
 - name: Loopback (dummy) interface unit

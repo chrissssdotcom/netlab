@@ -47,6 +47,9 @@
     label: "dn42-{{ item.name }}"
   register: wg_ext_cfg
 
+- name: Road warrior tunnel (roaming clients)
+  ansible.builtin.include_tasks: roadwarrior.yml
+
 - name: Work out which tunnels should exist
   ansible.builtin.set_fact:
     wg_wanted: >-

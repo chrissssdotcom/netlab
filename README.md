@@ -29,6 +29,8 @@ addresses and WireGuard ports.
   the dn42 latency/bandwidth/crypto + region/country communities.
 - **Origination** — the `/48`, `/27`, `/29` aggregates are announced from every
   PoP (anycast entry); each PoP's `/52` and IPv4 service routes stay inside iBGP.
+- **Road warrior** — a dual-stack WireGuard server per PoP for roaming devices,
+  dn42-only (see section 5).
 - **Host hardening** — nftables default-deny inbound, forwarding only
   dn42 ↔ dn42 (never to the public Internet), MSS clamping, SSH keys only,
   chrony, automatic security updates.
@@ -45,7 +47,8 @@ Rocky Linux 9 x64, smallest plan with IPv4, your SSH key added at creation:
 | r5 | Linode | Sydney, AU | Nanode 1 GB ($5/mo) |
 
 BIRD and WireGuard run comfortably in 1 GB. If you use the providers' cloud
-firewalls, allow UDP 42001–42015, UDP 20000–29999 (external peers) and TCP 22.
+firewalls, allow UDP 42001–42015, UDP 20000–29999 (external peers), UDP 51820 (road
+warriors) and TCP 22.
 
 **r1 (home):** a Rocky 9 VM or mini PC. It dials every tunnel itself, so the home
 router only needs to forward UDP if you want dn42 peers to connect *to* you
@@ -75,7 +78,49 @@ Add an entry to that PoP's `ebgp_peers` (see the commented example in
 your ASN, the PoP's public IP and the `listen_port`, your link-local
 `fe80::3420`, and the router's public key (`pubkeys/r2.pub`).
 
-## 5. Check it
+## 5. Road warriors (phones and laptops joining dn42 from anywhere)
+
+Every PoP runs a WireGuard server (`rw0`, UDP 51820). A device connects to
+whichever PoP is closest and can then reach everything in dn42, IPv4 and IPv6.
+It is **split-tunnel and dn42-only**: the public Internet never goes through the
+routers, and the firewall never forwards between dn42 and the Internet.
+
+| | IPv6 | IPv4 |
+|---|---|---|
+| Pool at each PoP | `fdcd:f79a:c76b:<N>f00::/64`, carved from that PoP's `/52` | a `/29` from your `/27` (`rw_pool4` in `host_vars`) |
+| Gateway | `::1` | pool base + 1 |
+| Client with `id: 5` | `...::5/128` | pool base + 5 `/32` |
+
+r4 and r5 are IPv6-only until you give them an `rw_pool4`. The `/52` is already in
+iBGP and the pool `/29` is added to it automatically, so the rest of dn42 and your
+other PoPs can reach a connected device with no extra routing.
+
+**Add a device**
+
+1. On the device, create a tunnel in the WireGuard app and copy its *public* key.
+   The private key never leaves the device and is never stored here.
+2. Add it to `rw_clients` in `inventory/group_vars/dn42_routers/main.yml`:
+   ```yaml
+   rw_clients:
+     - name: laptop
+       id: 2                  # unique; 2-6 while a PoP only has a /29
+       wg_pubkey: "<public key from the device>"
+       pops: [r1, r2, r3]     # optional; default is every PoP
+   ```
+3. `ansible-playbook site.yml` applies it. Connected devices keep their session.
+4. `ansible-playbook rw-clients.yml -e only=laptop` prints one config per PoP (and
+   writes `build/clients/`). Paste it into the app and replace the
+   `PrivateKey` placeholder with the device's own key.
+
+To remove a device, delete its entry and run `site.yml`. To switch the feature
+off, set `rw_enabled: false`. The home PoP (r1) needs a DDNS name in
+`wg_endpoint` and a UDP 51820 port-forward before clients can use it.
+
+Further reading: [`docs/SEMAPHORE.md`](docs/SEMAPHORE.md) to run this from Semaphore,
+[`docs/HOSTING.md`](docs/HOSTING.md) to put services (web pages, an auto-peering
+system) behind the routers.
+
+## 6. Check it
 
 ```bash
 birdc show protocols                 # OSPF, BFD, ibgp_r*, ebgp_* all Established/Running
@@ -83,7 +128,7 @@ birdc show ospf neighbors            # Full on every mesh link
 birdc show bfd sessions              # Up on every mesh link
 birdc show route count               # dn42 table size
 birdc show route for 172.20.0.53 all # path, communities, next hop
-wg show                              # latest handshake < 2 min on every tunnel
+wg show                              # latest handshake < 2 min on every tunnel (rw0 shows connected devices)
 journalctl -u dn42-roa -n 20         # ROA refresh results
 ```
 

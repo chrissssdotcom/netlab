@@ -37,4 +37,25 @@ for h in r1 r2 r3 r4 r5; do
   done
   echo "wg ok ($(ls build/$h/wireguard | wc -l) tunnels)"
 done
+
+# Road warrior: client configs parse with the placeholder key replaced, and the
+# addressing is what the design promises (dual-stack where a v4 pool exists).
+for c in build/*/clients/*.conf; do
+  h=$(basename "$(dirname "$(dirname "$c")")"); n=$(basename "$c" .conf)
+  mkdir -p "$tmp/rwc"; sed "s|^PrivateKey = .*|PrivateKey = $(wg genkey)|" "$c" > "$tmp/rwc/$h-$n.conf"
+  chmod 600 "$tmp/rwc/$h-$n.conf"
+  WG_QUICK_USERSPACE_IMPLEMENTATION=true wg-quick strip "$tmp/rwc/$h-$n.conf" >/dev/null || { echo "RW CLIENT FAIL $h/$n"; fail=1; }
+done
+want() { grep -qE "$2" "$1" || { echo "RW CHECK FAIL: $1 lacks /$2/"; fail=1; }; }
+want build/r2/wireguard/rw0.conf '^Address = fdcd:f79a:c76b:2f00::1/64, 172\.22\.169\.49/29$'
+want build/r2/wireguard/rw0.conf '^AllowedIPs = 172\.22\.169\.50/32, fdcd:f79a:c76b:2f00::2/128$'   # laptop
+want build/r2/wireguard/rw0.conf '^AllowedIPs = 172\.22\.169\.54/32, fdcd:f79a:c76b:2f00::6/128$'   # phone
+want build/r4/wireguard/rw0.conf '^Address = fdcd:f79a:c76b:4f00::1/64$'                              # no v4 pool
+want build/r4/wireguard/rw0.conf '^AllowedIPs = fdcd:f79a:c76b:4f00::6/128$'
+want build/r2/clients/laptop.conf '^Address = 172\.22\.169\.50/32, fdcd:f79a:c76b:2f00::2/128$'
+want build/r2/dn42.nft '"rw0" oifname "wg-r\*" accept'
+want build/r2/bird.conf '^	route 172\.22\.169\.48/29 unreachable;'
+! grep -q 'rw0' build/r1/wireguard/wg-r2.conf || { echo "RW leaked into a mesh tunnel"; fail=1; }
+[ ! -e build/r1/clients/tablet.conf ] || { echo "client pinned to r3 rendered on r1"; fail=1; }
+echo "road warrior checks done"
 exit $fail

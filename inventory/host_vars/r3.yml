@@ -11,3 +11,6 @@ community_region: 44           # North America-W
 community_country: 1840        # United States
 
 ebgp_peers: []
+
+# Road warrior IPv4 pool (gateway = first address, clients = pool base + id)
+rw_pool4: 172.22.169.56/29

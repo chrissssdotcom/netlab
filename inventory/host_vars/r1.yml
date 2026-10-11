@@ -15,3 +15,6 @@ community_country: 1036        # Australia
 ebgp_export_prepend: 2
 
 ebgp_peers: []
+
+# Road warrior IPv4 pool (gateway = first address, clients = pool base + id)
+rw_pool4: 172.22.169.40/29

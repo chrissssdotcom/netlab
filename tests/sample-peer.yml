@@ -9,3 +9,11 @@ ebgp_peers:
     bandwidth: 24
     crypto: 34
     bfd: true
+
+# Road warrior clients: one everywhere, one pinned to a single PoP, one with the
+# highest id that fits a /29 pool (6) — the keys are throwaway.
+rw_dns: ["fd42:d42:d42:54::1"]
+rw_clients:
+  - { name: laptop,  id: 2, wg_pubkey: "ZmFrZWZha2VmYWtlZmFrZWZha2VmYWtlZmFrZWZha2U=" }
+  - { name: phone,   id: 6, wg_pubkey: "ZmFrZTJmYWtlMmZha2UyZmFrZTJmYWtlMmZha2UyZmE=", pops: [r2, r4] }
+  - { name: tablet,  id: 3, wg_pubkey: "ZmFrZTNmYWtlM2Zha2UzZmFrZTNmYWtlM2Zha2UzZmE=", pops: [r3] }

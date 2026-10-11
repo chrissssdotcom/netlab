@@ -9,9 +9,10 @@
   tasks:
     - name: Output directory
       ansible.builtin.file:
-        path: "{{ out }}/wireguard"
+        path: "{{ item }}"
         state: directory
         mode: "0755"
+      loop: ["{{ out }}/wireguard", "{{ out }}/clients"]
 
     - name: bird.conf
       ansible.builtin.template:
@@ -48,6 +49,25 @@
         dest: "{{ out }}/wireguard/dn42-{{ item.name }}.conf"
         mode: "0644"
       loop: "{{ ebgp_peers }}"
+
+    - name: Road warrior tunnel
+      ansible.builtin.template:
+        src: ../roles/wireguard/templates/wg-rw.conf.j2
+        dest: "{{ out }}/wireguard/{{ rw_interface }}.conf"
+        mode: "0644"
+      when: rw_enabled | bool
+
+    - name: Road warrior client configs (PoPs without an endpoint are skipped, as in rw-clients.yml)
+      ansible.builtin.template:
+        src: ../roles/wireguard/templates/rw-client.conf.j2
+        dest: "{{ out }}/clients/{{ rw_client.name }}.conf"
+        mode: "0644"
+      vars:
+        rw_server_pubkey: "{{ lookup('ansible.builtin.file', pubkey_dir ~ '/' ~ inventory_hostname ~ '.pub') }}"
+      loop: "{{ rw_clients_here if (rw_enabled | bool and rw_endpoint | length > 0) else [] }}"
+      loop_control:
+        loop_var: rw_client
+        label: "{{ rw_client.name }}"
 
     - name: wg_wanted expression used by the role
       ansible.builtin.set_fact:

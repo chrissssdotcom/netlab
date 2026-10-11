@@ -23,3 +23,6 @@ ebgp_peers: []
 #    bandwidth: 24              # 64511:21-25 (24 = >=100 Mbit)
 #    crypto: 34                 # 64511:34   WireGuard
 #    bfd: false                 # only if the peer runs BFD too
+
+# Road warrior IPv4 pool (gateway = first address, clients = pool base + id)
+rw_pool4: 172.22.169.48/29

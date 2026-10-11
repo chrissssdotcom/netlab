@@ -30,6 +30,44 @@ mesh_costs: {}
 ebgp_local_ll: "fe80::3420" # our link-local on external peering tunnels
 pubkey_dir: "{{ inventory_dir }}/../pubkeys"   # node public keys are cached here
 
+# --- Road warrior (WireGuard for roaming clients, dual-stack) ------------------
+# One tunnel interface per PoP. Clients get a /128 from a /64 carved out of the
+# PoP's /52 (already routed by iBGP) and, where the PoP has an IPv4 pool, a /32 too.
+# They can reach dn42 only — never the public Internet through us.
+rw_enabled: true
+rw_interface: rw0           # must NOT match wg-r* or dn42* (firewall and BIRD globs)
+rw_listen_port: 51820       # UDP, open to the world; keep clear of 42001-42015 and 20000-29999
+rw_endpoint: "{{ wg_endpoint if wg_endpoint else public_ipv4 }}"   # what clients dial
+rw_prefix6: "{{ dn42_prefix6 }}:{{ '%x' | format(router_id | int) }}f00"   # PoP /52 -> its f00 /64
+rw_net6: "{{ rw_prefix6 }}::/64"
+rw_gw6: "{{ rw_prefix6 }}::1"
+rw_pool4: ""                # per PoP in host_vars, e.g. 172.22.169.48/29 ('' = IPv6-only here)
+rw_pool4_base: "{{ rw_pool4.split('/')[0].split('.')[0:3] | join('.') }}"
+rw_pool4_off: "{{ rw_pool4.split('/')[0].split('.')[3] | int }}"
+rw_pool4_len: "{{ rw_pool4.split('/')[1] | int }}"
+rw_pool4_size: "{{ 2 ** (32 - (rw_pool4.split('/')[1] | int)) }}"
+rw_gw4: "{{ rw_pool4_base }}.{{ (rw_pool4_off | int) + 1 }}"
+# What a client routes into the tunnel (split tunnel: dn42 and friends only).
+# Deliberately not all of 10.0.0.0/8, which most home and office LANs use.
+rw_client_allowed_ips:
+  - 172.20.0.0/14
+  - 172.31.0.0/16
+  - 10.100.0.0/14
+  - 10.127.0.0/16
+  - fd00::/8
+rw_dns: []                  # e.g. ["fd42:d42:d42:54::1"] — dn42 resolvers handed to clients
+# One entry per device. `id` is the host offset in every PoP's pool (v4: pool base + id,
+# v6: <rw /64>::<id hex>), so a device keeps its numbers wherever it connects.
+# rw_clients:
+#   - name: laptop            # a-z0-9-, max 20 chars
+#     id: 2                   # 2..(pool size - 2) for v4 pools; 2..254 for v6
+#     wg_pubkey: "base64-public-key-generated-on-the-device="
+#     pops: [r1, r2]          # optional: only these PoPs accept it (default: all)
+rw_clients: []
+rw_clients_here: >-
+  {{ (rw_clients | rejectattr('pops', 'defined') | list)
+     + (rw_clients | selectattr('pops', 'defined') | selectattr('pops', 'contains', inventory_hostname) | list) }}
+
 # --- BGP policy -----------------------------------------------------------------
 bgp_import_limit: 10000     # per channel, per eBGP session — far above the dn42 table size
 bgp_max_path_len: 25
