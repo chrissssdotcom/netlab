@@ -49,4 +49,24 @@ python3 tools/semaphore_setup.py --project other > "$tmp/run3.txt"
 grep -q 'WARNING.*deploy key' "$tmp/run3.txt" && echo "ok   warns when the SSH repo has no deploy key" || { echo "FAIL no deploy-key warning"; fail=1; }
 grep -q 'VULTR_API_KEY is not set' "$tmp/run3.txt" && echo "ok   notes the missing provider token" || { echo "FAIL no provider-token note"; fail=1; }
 
+# A resolver that fails on "both families" but answers per family (WSL's DNS proxy)
+python3 - <<'PY' && echo "ok   resolver fallback works when only AF_UNSPEC lookups fail" || { echo "FAIL resolver fallback"; fail=1; }
+import socket, sys
+sys.path.insert(0, "tools")
+def fake(host, port, family=0, *a, **k):
+    if family in (0, socket.AF_UNSPEC):
+        raise socket.gaierror(-5, "No address associated with hostname")
+    if family == socket.AF_INET:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.7", port))]
+    raise socket.gaierror(-5, "nope")
+socket.getaddrinfo = fake
+import semaphore_setup
+semaphore_setup.install_resolver_fallback()
+assert socket.getaddrinfo("x", 443)[0][4][0] == "192.0.2.7"
+try:
+    socket.getaddrinfo("x", 443, socket.AF_INET6); sys.exit(1)
+except socket.gaierror:
+    pass
+PY
+
 exit $fail

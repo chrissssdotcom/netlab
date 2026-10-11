@@ -20,10 +20,32 @@ Secrets are only ever sent to your own Semaphore, and never printed.
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+
+def install_resolver_fallback():
+    """Some resolvers (notably WSL's DNS proxy) fail when A and AAAA are asked together
+    although each works alone. If the normal lookup fails, retry one family at a time."""
+    real = socket.getaddrinfo
+
+    def getaddrinfo(host, port, family=0, *args, **kw):
+        try:
+            return real(host, port, family, *args, **kw)
+        except socket.gaierror as first:
+            if family not in (0, socket.AF_UNSPEC):
+                raise
+            for fam in (socket.AF_INET, socket.AF_INET6):
+                try:
+                    return real(host, port, fam, *args, **kw)
+                except socket.gaierror:
+                    pass
+            raise first
+
+    socket.getaddrinfo = getaddrinfo
+
 
 SECRET_KEYS = {"private_key", "passphrase", "secret", "password"}
 
@@ -97,6 +119,7 @@ def main():
     ap.add_argument("--branch", default="main")
     a = ap.parse_args()
 
+    install_resolver_fallback()
     url, token = os.environ.get("SEMAPHORE_URL", ""), os.environ.get("SEMAPHORE_TOKEN", "")
     if not url or not token:
         sys.exit("Set SEMAPHORE_URL and SEMAPHORE_TOKEN in this shell first.")
