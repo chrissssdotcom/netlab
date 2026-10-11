@@ -1,6 +1,12 @@
 # Vultr wants SSH keys registered in the account before an instance can use them.
 # provision.yml runs this one host at a time (serial: 1) so parallel hosts can never
 # register the same key twice.
+- name: Preflight — an empty or malformed key must never match an existing Vultr key
+  ansible.builtin.assert:
+    that: provision_ssh_public_key is match('^(ssh-ed25519|ssh-rsa|ecdsa-sha2-[a-z0-9]+) [A-Za-z0-9+/=]+')
+    fail_msg: "DN42_ADMIN_SSH_PUBKEY is not set or is not an SSH public key (ssh-ed25519 AAAA...)"
+    quiet: true
+
 - name: Registered SSH keys
   ansible.builtin.uri:
     url: "{{ vultr_api_url }}/ssh-keys?per_page=500"

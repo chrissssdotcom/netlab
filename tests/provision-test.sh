@@ -44,6 +44,13 @@ if ansible-playbook provision.yml -e provision_create=false -e linode_api_url=ht
 else echo "ok   lookup-only mode fails when a server is missing"; fi
 ok "lookup-only mode created nothing" "$(stat creates)" 4
 
+# An unset admin key must stop everything before any API call can match or create anything
+before=$(stat creates)
+if DN42_ADMIN_SSH_PUBKEY="" ansible-playbook provision.yml "${args[@]}" >/dev/null 2>&1; then
+  echo "FAIL empty DN42_ADMIN_SSH_PUBKEY was accepted"; fail=1
+else echo "ok   empty DN42_ADMIN_SSH_PUBKEY is rejected"; fi
+ok "rejected run created nothing" "$(stat creates)" "$before"
+
 # VPCs: opt-in, created per PoP, attached to newly created servers only.
 # The mock is fresh for this block because the servers above already exist.
 kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
