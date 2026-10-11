@@ -89,6 +89,32 @@ IPv6 (Linode's is in limited availability), so IPv6 only works if that test pass
 means rebuilding it. Deleting a VPC (or the server) stays a manual step in the
 provider console.
 
+#### Your own addresses: VLANs and custom prefixes (recommended)
+
+Both providers let you choose the network yourself, which removes the "will the
+provider drop dn42 addresses" problem for IPv4 and gives you IPv6:
+
+| | Linode PoPs (r3, r5) | Vultr PoPs (r2, r4) |
+|---|---|---|
+| `vpc_type` | `vlan`: a plain Layer 2 network, free, no filtering, IPv6 works | `vpc`: VPC 2.0 with a **custom prefix** |
+| IPv4 | `vpc_dn42_net4`: a `/29` from your IPAM; the router takes `.1`, five hosts get the rest | the same `/29` becomes the VPC's own subnet at creation |
+| IPv6 | `<N>001::/64`, router `::1` | the same, riding on top of the VPC (test it, see above) |
+| Addressing | static, set by the `vpc` role (no DHCP) | static when `vpc_dn42_net4` is set, otherwise provider DHCP |
+
+Per PoP in `host_vars`:
+
+```yaml
+vpc_enabled: true
+vpc_type: vlan                 # r3, r5.  r2, r4: vpc (default)
+vpc_dn42_net4: 172.22.x.y/29   # from your IPAM; empty = IPv6 only
+```
+
+The role refuses an allocation that is misaligned, outside `dn42_aggregates4`, or overlaps
+the road-warrior pool, because BGP and the forwarding rules would silently drop it. A
+`/29` is enough: router + five hosts. Linode VLANs attach by label and appear on first
+use; both kinds attach **only when the server is created** (change an existing server in
+the provider console: Configurations → `eth1`, then reboot).
+
 **Containers**: the ruleset starts with `flush ruleset`, which also deletes the NAT
 tables Docker and podman create, breaking their networking on the next nftables
 reload. Run containers with host networking bound to the service address, or give

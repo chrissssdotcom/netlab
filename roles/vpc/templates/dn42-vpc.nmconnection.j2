@@ -11,11 +11,21 @@ autoconnect=true
 [ethernet]
 
 [ipv4]
+{% if vpc_static %}
+{# our own dn42 addressing (always the case on a VLAN, which has no DHCP server) #}
+{% if vpc_dn42_net4 %}
+method=manual
+address1={{ vpc_gw4 }}/{{ vpc_dn42_net4.split('/')[1] }}
+{% else %}
+method=disabled
+{% endif %}
+{% else %}
 method=auto
 never-default=true
 ignore-auto-dns=true
 {% if vpc_dn42_net4 %}
 address1={{ vpc_gw4 }}/{{ vpc_dn42_net4.split('/')[1] }}
+{% endif %}
 {% endif %}
 
 [ipv6]

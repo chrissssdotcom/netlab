@@ -61,13 +61,39 @@ ok "rejected run created nothing" "$(stat creates)" "$before"
 kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
 python3 tests/mock_provider_api.py $port & mock=$!
 for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
-ansible-playbook provision.yml --check -e vpc_enabled=true "${args[@]}" >/dev/null
+ansible-playbook provision.yml --check -e vpc_enabled=true -e vpc_type=vpc "${args[@]}" >/dev/null
 ok "VPC --check creates nothing" "$(stat vpcs)" 0
-ansible-playbook provision.yml -e vpc_enabled=true "${args[@]}" >/dev/null
+ansible-playbook provision.yml -e vpc_enabled=true -e vpc_type=vpc "${args[@]}" >/dev/null
 ok "VPC run creates one VPC per cloud PoP" "$(stat vpcs)" 4
 ok "every new server is attached to its VPC" "$(stat attached)" 4
-ansible-playbook provision.yml -e vpc_enabled=true "${args[@]}" >/dev/null
+ansible-playbook provision.yml -e vpc_enabled=true -e vpc_type=vpc "${args[@]}" >/dev/null
 ok "VPC re-run creates nothing more" "$(stat vpcs)" 4
 ok "VPC re-run creates no new server" "$(stat creates)" 4
+
+# VLANs (Linode only): attached by label, no VPC objects, Vultr must refuse
+kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
+python3 tests/mock_provider_api.py $port & mock=$!
+for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
+ansible-playbook provision.yml --limit r3,r5 -e vpc_enabled=true -e vpc_type=vlan "${args[@]}" >/dev/null
+ok "VLAN: both Linode PoPs created with a VLAN interface" "$(stat vlans)" 2
+ok "VLAN: no VPC objects were created" "$(stat vpcs)" 0
+before=$(stat creates)
+if ansible-playbook provision.yml --limit r2 -e vpc_enabled=true -e vpc_type=vlan "${args[@]}" >/dev/null 2>&1; then
+  echo "FAIL Vultr accepted vpc_type=vlan"; fail=1
+else echo "ok   Vultr refuses vpc_type=vlan"; fi
+ok "Vultr refusal created nothing" "$(stat creates)" "$before"
+
+# Custom prefixes: the provider-side subnet is the dn42 allocation when one is set,
+# on Vultr (VPC 2.0) and Linode (VPC) alike; unset keeps the private placeholder.
+kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
+python3 tests/mock_provider_api.py $port & mock=$!
+for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
+ansible-playbook provision.yml --limit r2,r3 -e vpc_enabled=true -e vpc_type=vpc -e vpc_dn42_net4=172.22.169.56/29 "${args[@]}" >/dev/null
+ok "custom prefix used as the provider subnet (Vultr + Linode)" "$(stat subnets)" "['172.22.169.56/29', '172.22.169.56/29']"
+kill $mock 2>/dev/null; wait $mock 2>/dev/null || true
+python3 tests/mock_provider_api.py $port & mock=$!
+for _ in $(seq 20); do curl -fs "http://127.0.0.1:$port/_stats" >/dev/null && break; sleep 0.2; done
+ansible-playbook provision.yml --limit r2,r3 -e vpc_enabled=true -e vpc_type=vpc "${args[@]}" >/dev/null
+ok "no custom prefix: private placeholder subnets" "$(stat subnets)" "['10.202.0.0/24', '10.203.0.0/24']"
 
 exit $fail

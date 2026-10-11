@@ -13,7 +13,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = "testtoken"
-state = {"linode": [], "vultr": [], "keys": [], "ln_vpcs": [], "vu_vpcs": [], "attached": 0,
+state = {"linode": [], "vultr": [], "keys": [], "ln_vpcs": [], "vu_vpcs": [], "attached": 0, "vlans": 0,
          "creates": 0, "unauth": 0, "next_id": 1000}
 
 
@@ -49,7 +49,9 @@ class H(BaseHTTPRequestHandler):
         if p == "/_stats":
             return self.send(200, {"creates": state["creates"], "ssh_keys": len(state["keys"]),
                                    "unauthorised": state["unauth"], "vpcs": len(state["ln_vpcs"]) + len(state["vu_vpcs"]),
-                                   "attached": state["attached"],
+                                   "attached": state["attached"], "vlans": state["vlans"],
+                                   "subnets": sorted([f'{v["v4_subnet"]}/{v["v4_subnet_mask"]}' for v in state["vu_vpcs"]]
+                                                     + [sn["ipv4"] for v in state["ln_vpcs"] for sn in v["subnets"]]),
                                    "servers": [s["label"] for s in state["linode"] + state["vultr"]]})
         if not self.authed():
             return
@@ -97,6 +99,10 @@ class H(BaseHTTPRequestHandler):
                     if not any(sn["id"] == sid for v in state["ln_vpcs"] for sn in v["subnets"]):
                         return self.send(400, {"errors": [{"reason": "unknown subnet_id"}]})
                     state["attached"] += 1
+                if itf.get("purpose") == "vlan":
+                    if not itf.get("label"):
+                        return self.send(400, {"errors": [{"reason": "vlan interface needs a label"}]})
+                    state["vlans"] += 1
             if b.get("interfaces") and b["interfaces"][0].get("purpose") != "public":
                 return self.send(400, {"errors": [{"reason": "eth0 must stay public"}]})
             s = {"id": i, "label": b["label"], "region": b["region"], "type": b["type"], "image": b["image"],

@@ -89,8 +89,13 @@ vultr_api_url: https://api.vultr.com/v2
 # A provider VPC is private IPv4 only. dn42 addresses ride on top of it, which only
 # works if the provider's VPC passes traffic from addresses it did not assign.
 vpc_enabled: false          # set true per PoP in host_vars, then recreate the server (VPCs attach at creation)
-vpc_label: "dn42-{{ inventory_hostname }}"
-vpc_subnet4: "10.{{ 200 + (router_id | int) }}.0.0/24"   # provider-side private subnet, one per PoP
+vpc_type: vpc              # vpc = provider VPC (private IPv4, DHCP); vlan = Linode VLAN (plain Layer 2, you assign
+                           # the addresses, IPv6 works, nothing is filtered). vlan is Linode-only.
+vpc_label: "dn42-{{ inventory_hostname }}"   # also the VLAN label
+vpc_subnet4: "{{ vpc_dn42_net4 if vpc_dn42_net4 else '10.' ~ (200 + (router_id | int)) ~ '.0.0/24' }}"
+# ^ the subnet created at the provider: your dn42 /29 when vpc_dn42_net4 is set (both Vultr and
+#   Linode accept custom prefixes), otherwise a private 10.20x.0.0/24 as a placeholder
+vpc_static: "{{ vpc_type == 'vlan' or (vpc_dn42_net4 | length > 0) }}"   # we assign the addresses (no DHCP)
 vpc_interface: ""           # the VPC NIC; empty = the one interface that is not public/tunnel
 vpc_iface: "{{ vpc_interface }}"   # resolved at run time by the vpc role
 vpc_dn42_net6: "{{ dn42_prefix6 }}:{{ '%x' | format(router_id | int) }}001::/64"   # inside the PoP /52; router = ::1

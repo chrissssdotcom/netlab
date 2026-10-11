@@ -83,6 +83,9 @@ ansible-playbook deploy.yml                # create what is missing, then build 
   returns 401. Tokens need read/write on servers (Linode) / the default key (Vultr).
 - A fresh server accepts the provider's generated root password until the first run
   hardens SSH (a few minutes); `deploy.yml` does that straight away.
+- **VLANs and custom prefixes**: Linode PoPs can use a VLAN (`vpc_type: vlan`) and Vultr a
+  VPC whose subnet is your own dn42 `/29` (`vpc_dn42_net4`), giving dual-stack networks behind
+  each router with addresses from your IPAM; see `docs/HOSTING.md`.
 - **VPCs (opt-in)**: set `vpc_enabled: true` in a PoP's `host_vars` and `provision.yml`
   also creates that PoP's VPC (Vultr VPC 2.0 / Linode VPC, private subnet
   `10.20x.0.0/24`) and attaches it to the server **when the server is created**.

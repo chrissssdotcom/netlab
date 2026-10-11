@@ -54,7 +54,7 @@ table inet dn42 {
 		tcp dport 22 ct state new limit rate 30/minute accept
 {% endif %}
 
-{% if vpc_enabled | bool %}
+{% if vpc_enabled | bool and not vpc_static %}
 		# DHCP replies on the provider VPC NIC
 		iifname "{{ vpc_iface }}" udp sport 67 udp dport 68 accept
 

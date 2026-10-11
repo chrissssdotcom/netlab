@@ -18,6 +18,13 @@
     msg: "{{ provision_label }} does not exist at Vultr and provision_create is false"
   when: vu_inst | length == 0 and not (provision_create | bool)
 
+- name: VLANs are a Linode feature
+  ansible.builtin.assert:
+    that: vpc_type == 'vpc'
+    fail_msg: "{{ inventory_hostname }}: vpc_type 'vlan' is Linode-only; Vultr PoPs use vpc_type: vpc"
+    quiet: true
+  when: vpc_enabled | bool
+
 - name: VPC for this PoP
   ansible.builtin.include_tasks: vultr_vpc.yml
   when: vpc_enabled | bool and provision_create | bool

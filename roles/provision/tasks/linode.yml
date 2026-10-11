@@ -21,11 +21,11 @@
 
 - name: VPC for this PoP
   ansible.builtin.include_tasks: linode_vpc.yml
-  when: vpc_enabled | bool and provision_create | bool
+  when: vpc_enabled | bool and provision_create | bool and vpc_type == 'vpc'
 
 - name: Existing server — a VPC is only attached when a server is created
   ansible.builtin.debug:
-    msg: "{{ provision_label }} already exists; attach the VPC to it in the Linode console (not automated)"
+    msg: "{{ provision_label }} already exists; attach the {{ vpc_type | upper }} to it in the Linode console (Configurations > eth1; not automated)"
   when: vpc_enabled | bool and ln_inst | length > 0
 
 - name: Create the Linode
@@ -54,7 +54,10 @@
     ln_vpc_body: >-
       {{ {'interfaces': [{'purpose': 'public', 'primary': true},
                          {'purpose': 'vpc', 'subnet_id': (ln_vpc_subnet_id | int), 'primary': false}]}
-         if (vpc_enabled | bool and ln_vpc_subnet_id is defined) else {} }}
+         if (vpc_enabled | bool and vpc_type == 'vpc' and ln_vpc_subnet_id is defined)
+         else {'interfaces': [{'purpose': 'public', 'primary': true},
+                              {'purpose': 'vlan', 'label': vpc_label}]}
+         if (vpc_enabled | bool and vpc_type == 'vlan') else {} }}
   register: ln_created
   when: ln_inst | length == 0
   no_log: true
